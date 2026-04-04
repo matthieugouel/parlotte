@@ -1,0 +1,21 @@
+[package]
+name = "parlotte-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["staticlib", "cdylib", "lib"]
+name = "parlotte_ffi"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+
+[dependencies]
+parlotte-core = { path = "../parlotte-core" }
+uniffi = { workspace = true, features = ["cli"] }
+tokio = { workspace = true }
+
+[build-dependencies]
+uniffi = { workspace = true, features = ["build"] }

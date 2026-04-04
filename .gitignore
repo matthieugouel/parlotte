@@ -1,0 +1,33 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# macOS
+.DS_Store
+*.xcuserstate
+*.xcworkspacedata
+xcuserdata/
+
+# Xcode
+apple/Parlotte/build/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xccheckout
+*.moved-aside
+DerivedData/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker volumes
+tests/integration/synapse-data/
+
+# UniFFI generated
+generated/
+*.xcframework/

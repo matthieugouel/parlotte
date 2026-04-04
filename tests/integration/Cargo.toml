@@ -1,0 +1,18 @@
+[package]
+name = "parlotte-integration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# Integration tests are in src/lib.rs as test modules
+# They require a running Synapse server (see docker-compose.yml)
+
+[dependencies]
+parlotte-core = { path = "../../crates/parlotte-core" }
+tokio = { workspace = true, features = ["macros", "test-util"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+reqwest = { version = "0.12", features = ["json"] }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
