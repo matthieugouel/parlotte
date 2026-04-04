@@ -9,7 +9,7 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-license = "AGPL-3.0-or-later"
+license = "MIT"
 
 [workspace.dependencies]
 matrix-sdk = { version = "0.16", features = ["e2e-encryption", "sqlite", "markdown"] }

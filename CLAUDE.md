@@ -116,7 +116,7 @@ When adding a new core feature:
 | Storage | SQLite via `matrix-sdk-sqlite` | Persistent, performant, works on all platforms |
 | Async runtime | tokio, owned by `ParlotteClient` | `matrix-sdk` requires tokio; embedding the runtime simplifies FFI |
 | Test server | Synapse in Docker | Official reference server; `docker compose` for reproducible setup |
-| License | AGPL-3.0-or-later | Copyleft for the client, consistent with Matrix ecosystem norms |
+| License | MIT | Permissive license, easy for anyone to use and contribute |
 
 ## Integration Test Infrastructure
 

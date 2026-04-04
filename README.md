@@ -11,7 +11,3 @@ The Matrix ecosystem deserves a client that can stand next to the best commercia
 ## Status
 
 Early development. The Rust core is functional (login, rooms, messaging, sync) and tested against a real Matrix homeserver. The macOS app is next.
-
-## License
-
-AGPL-3.0-or-later
