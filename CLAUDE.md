@@ -37,14 +37,19 @@ Uses UniFFI **proc-macro approach** (not UDL files). Types are annotated with `#
 
 The FFI crate re-wraps core types with UniFFI annotations rather than annotating core types directly — this keeps `parlotte-core` free of FFI concerns.
 
-### Apple (`apple/`) — Future
+### Apple (`apple/`)
 
-macOS app first (macOS 14+), then iOS (17+). SwiftUI only — no UIKit, no AppKit, no legacy frameworks. The Swift code consumes `ParlotteSDK` (a Swift package wrapping the UniFFI-generated XCFramework).
+macOS app (macOS 14+), with iOS (17+) planned. SwiftUI only — no UIKit, no AppKit, no legacy frameworks. The Swift code consumes `ParlotteSDK` (a Swift package wrapping the UniFFI-generated bindings).
+
+Structure:
+- `apple/ParlotteSDK/` — Swift package with 3 targets: `RustFramework` (static lib), `ParlotteFFI` (UniFFI-generated Swift), `ParlotteSDK` (hand-written async actor wrapper)
+- `apple/Parlotte/` — SwiftUI app package, depends on ParlotteSDK
+- `scripts/build-apple.sh` — Builds Rust static lib, generates Swift bindings, copies to ParlotteSDK
 
 ## Development Commands
 
 ```bash
-# Build everything
+# Build everything (Rust)
 cargo build
 
 # Run unit tests (no Docker needed)
@@ -56,11 +61,17 @@ cargo test -p parlotte-core
 # Run integration tests and keep Synapse running after
 KEEP_RUNNING=1 ./scripts/run-integration-tests.sh --test-threads=1
 
-# Generate Swift bindings
-cargo run -p parlotte-ffi --bin uniffi-bindgen generate \
-    --library ./target/debug/libparlotte_ffi.dylib \
-    --language swift \
-    --out-dir ./generated
+# Build Apple XCFramework + Swift bindings
+./scripts/build-apple.sh
+
+# Build and run macOS app
+cd apple/Parlotte && swift run Parlotte
+
+# Run with a named profile (for multi-instance testing)
+cd apple/Parlotte && swift run Parlotte --profile alice
+
+# Run with debug logging from the Rust core
+cd apple/Parlotte && swift run Parlotte --debug
 ```
 
 ## Testing Philosophy
@@ -94,11 +105,13 @@ When adding a new core feature:
 - Use `matches!()` for enum comparisons when the type doesn't implement `PartialEq`
 - Tests in the same file under `#[cfg(test)] mod tests`
 
-### Swift (future)
+### Swift
 
 - SwiftUI only, minimum macOS 14 / iOS 17
 - `@Observable` macro (not `ObservableObject`/`@Published`)
 - Swift concurrency (`async/await`, actors) — no Combine, no callbacks in Swift layer
+- `MatrixClient` actor wraps blocking FFI calls with `Task.detached`
+- `AppState` is `@Observable @MainActor` — single source of truth for all UI state
 
 ### General
 

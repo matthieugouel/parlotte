@@ -140,7 +140,7 @@ mod tests {
         let (client, _) = register_and_login("create_room");
 
         // Create a room
-        let room_id = client.create_room("Test Room").unwrap();
+        let room_id = client.create_room("Test Room", false).unwrap();
         assert!(room_id.starts_with('!'));
         assert!(room_id.contains(":parlotte.test"));
 
@@ -164,22 +164,36 @@ mod tests {
         let (bob, bob_id) = register_and_login("bob");
 
         // Alice creates a room and invites Bob
-        let room_id = alice.create_room("Chat Room").unwrap();
+        let room_id = alice.create_room("Chat Room", false).unwrap();
         alice.sync_once().unwrap();
         alice.invite_user(&room_id, &bob_id).unwrap();
 
-        // Bob syncs to see the invite, then joins
+        // Bob syncs to see the invite
         bob.sync_once().unwrap();
+
+        // Verify the invited room appears in Bob's room list
+        let bob_rooms = bob.rooms().unwrap();
+        let invited = bob_rooms.iter().find(|r| r.id == room_id);
+        assert!(invited.is_some(), "Bob should see the invited room");
+        assert!(invited.unwrap().is_invited, "Room should be marked as invited");
+
         bob.join_room(&room_id).unwrap();
 
         // Both sync to see Bob's join
         alice.sync_once().unwrap();
         bob.sync_once().unwrap();
 
+        // After joining, room should no longer be marked as invited
+        let bob_rooms = bob.rooms().unwrap();
+        let joined = bob_rooms.iter().find(|r| r.id == room_id);
+        assert!(joined.is_some(), "Bob should still see the room after joining");
+        assert!(!joined.unwrap().is_invited, "Room should not be marked as invited after joining");
+
         // Alice sends a message
         alice.send_message(&room_id, "Hello Bob!").unwrap();
 
-        // Bob syncs to receive the message
+        // Both sync to receive the message
+        alice.sync_once().unwrap();
         bob.sync_once().unwrap();
 
         // Verify both users see the room
@@ -187,6 +201,75 @@ mod tests {
         let bob_rooms = bob.rooms().unwrap();
         assert!(alice_rooms.iter().any(|r| r.id == room_id));
         assert!(bob_rooms.iter().any(|r| r.id == room_id));
+
+        // Verify Alice's message is visible to both users
+        let alice_msgs = alice.messages(&room_id, 50).unwrap();
+        let bob_msgs = bob.messages(&room_id, 50).unwrap();
+
+        assert!(
+            alice_msgs.iter().any(|m| m.body == "Hello Bob!"),
+            "Alice should see her own message"
+        );
+        assert!(
+            bob_msgs.iter().any(|m| m.body == "Hello Bob!"),
+            "Bob should see Alice's message"
+        );
+    }
+
+    // -- Test: Multi-message conversation between two users --
+
+    #[test]
+    fn two_users_conversation() {
+        require_synapse();
+        let (alice, _alice_id) = register_and_login("conv_alice");
+        let (bob, bob_id) = register_and_login("conv_bob");
+
+        // Alice creates a room and invites Bob
+        let room_id = alice.create_room("Conversation", false).unwrap();
+        alice.sync_once().unwrap();
+        alice.invite_user(&room_id, &bob_id).unwrap();
+
+        bob.sync_once().unwrap();
+        bob.join_room(&room_id).unwrap();
+
+        alice.sync_once().unwrap();
+        bob.sync_once().unwrap();
+
+        // Exchange several messages
+        alice.send_message(&room_id, "Hey Bob, how are you?").unwrap();
+        bob.sync_once().unwrap();
+
+        bob.send_message(&room_id, "I'm good Alice! You?").unwrap();
+        alice.sync_once().unwrap();
+
+        alice.send_message(&room_id, "Great, thanks!").unwrap();
+        alice.sync_once().unwrap();
+        bob.sync_once().unwrap();
+
+        // Both should see all three messages
+        let alice_msgs = alice.messages(&room_id, 50).unwrap();
+        let bob_msgs = bob.messages(&room_id, 50).unwrap();
+
+        let expected = ["Hey Bob, how are you?", "I'm good Alice! You?", "Great, thanks!"];
+        for body in &expected {
+            assert!(
+                alice_msgs.iter().any(|m| m.body == *body),
+                "Alice missing message: {body}"
+            );
+            assert!(
+                bob_msgs.iter().any(|m| m.body == *body),
+                "Bob missing message: {body}"
+            );
+        }
+
+        // Messages should be ordered by timestamp (oldest first)
+        let alice_texts: Vec<&str> = alice_msgs.iter().map(|m| m.body.as_str()).collect();
+        assert_eq!(
+            alice_texts.iter().position(|b| *b == expected[0]).unwrap()
+                < alice_texts.iter().position(|b| *b == expected[1]).unwrap(),
+            true,
+            "Messages should be in chronological order"
+        );
     }
 
     // -- Test: Room display name resolution --
@@ -197,8 +280,8 @@ mod tests {
         let (client, _) = register_and_login("display_name");
 
         // Create rooms with different names
-        let room1_id = client.create_room("Living Room").unwrap();
-        let room2_id = client.create_room("Kitchen").unwrap();
+        let room1_id = client.create_room("Living Room", false).unwrap();
+        let room2_id = client.create_room("Kitchen", false).unwrap();
 
         client.sync_once().unwrap();
 
@@ -219,7 +302,7 @@ mod tests {
         require_synapse();
         let (client, _) = register_and_login("multi_sync");
 
-        client.create_room("Stable Room").unwrap();
+        client.create_room("Stable Room", false).unwrap();
 
         // Sync multiple times — room count should stay at 1
         client.sync_once().unwrap();
@@ -228,5 +311,102 @@ mod tests {
 
         let rooms = client.rooms().unwrap();
         assert_eq!(rooms.len(), 1);
+    }
+
+    // -- Test: Invite with persistent store --
+
+    #[test]
+    fn invite_visible_with_persistent_store() {
+        require_synapse();
+
+        let alice_user = unique_username("store_alice");
+        let bob_user = unique_username("store_bob");
+        let password = "test-password-123";
+
+        // Register both users
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let (_alice_id, bob_id) = rt.block_on(async {
+            let http = reqwest::Client::new();
+            let a = http.post(format!("{HOMESERVER_URL}/_matrix/client/v3/register"))
+                .json(&serde_json::json!({"username": alice_user, "password": password, "auth": {"type": "m.login.dummy"}}))
+                .send().await.unwrap().json::<RegisterResponse>().await.unwrap();
+            let b = http.post(format!("{HOMESERVER_URL}/_matrix/client/v3/register"))
+                .json(&serde_json::json!({"username": bob_user, "password": password, "auth": {"type": "m.login.dummy"}}))
+                .send().await.unwrap().json::<RegisterResponse>().await.unwrap();
+            (a.user_id, b.user_id)
+        });
+        drop(rt);
+
+        // Create clients with persistent stores (like the app does)
+        let alice_store = format!("{}/alice_store", std::env::temp_dir().display());
+        let bob_store = format!("{}/bob_store", std::env::temp_dir().display());
+        let _ = std::fs::remove_dir_all(&alice_store);
+        let _ = std::fs::remove_dir_all(&bob_store);
+
+        let alice = ParlotteClient::new(HOMESERVER_URL, Some(&alice_store)).unwrap();
+        alice.login(&alice_user, password).unwrap();
+        alice.sync_once().unwrap();
+
+        let bob = ParlotteClient::new(HOMESERVER_URL, Some(&bob_store)).unwrap();
+        bob.login(&bob_user, password).unwrap();
+        bob.sync_once().unwrap();
+
+        // Bob has no rooms yet
+        let bob_rooms = bob.rooms().unwrap();
+        assert_eq!(bob_rooms.len(), 0, "Bob should start with no rooms");
+
+        // Alice creates a private room and invites Bob
+        let room_id = alice.create_room("StoreTest", false).unwrap();
+        alice.sync_once().unwrap();
+        alice.invite_user(&room_id, &bob_id).unwrap();
+
+        // Bob syncs — should see the invite
+        bob.sync_once().unwrap();
+        let bob_rooms = bob.rooms().unwrap();
+        let invited = bob_rooms.iter().filter(|r| r.is_invited).collect::<Vec<_>>();
+        assert_eq!(invited.len(), 1, "Bob should see 1 invited room, got {}", invited.len());
+        assert_eq!(invited[0].id, room_id);
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&alice_store);
+        let _ = std::fs::remove_dir_all(&bob_store);
+    }
+
+    // -- Test: Public room discovery and join --
+
+    #[test]
+    fn public_room_discovery_and_join() {
+        require_synapse();
+        let (alice, _) = register_and_login("pub_alice");
+        let (bob, _) = register_and_login("pub_bob");
+
+        // Alice creates a public room
+        let room_id = alice.create_room("Public Lounge", true).unwrap();
+        alice.sync_once().unwrap();
+        bob.sync_once().unwrap();
+
+        // Bob discovers it via the directory
+        let public = bob.public_rooms().unwrap();
+        assert!(
+            public.iter().any(|r| r.id == room_id),
+            "Public room should appear in directory"
+        );
+
+        let found = public.iter().find(|r| r.id == room_id).unwrap();
+        assert_eq!(found.name.as_deref(), Some("Public Lounge"));
+
+        // Bob joins the public room (no invite needed)
+        bob.join_room(&room_id).unwrap();
+        bob.sync_once().unwrap();
+
+        let bob_rooms = bob.rooms().unwrap();
+        assert!(bob_rooms.iter().any(|r| r.id == room_id));
+
+        // Both can exchange messages
+        alice.send_message(&room_id, "Welcome!").unwrap();
+        bob.sync_once().unwrap();
+
+        let msgs = bob.messages(&room_id, 50).unwrap();
+        assert!(msgs.iter().any(|m| m.body == "Welcome!"));
     }
 }

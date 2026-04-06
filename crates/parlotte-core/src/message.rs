@@ -20,6 +20,17 @@ pub struct SessionInfo {
     pub device_id: String,
 }
 
+/// Full session data needed to restore a previous login.
+#[derive(Debug, Clone)]
+pub struct MatrixSessionData {
+    /// The authenticated user's Matrix ID.
+    pub user_id: String,
+    /// The device ID for this session.
+    pub device_id: String,
+    /// The access token for this session.
+    pub access_token: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,5 +81,30 @@ mod tests {
         let cloned = session.clone();
         assert_eq!(session.user_id, cloned.user_id);
         assert_eq!(session.device_id, cloned.device_id);
+    }
+
+    #[test]
+    fn matrix_session_data_construction() {
+        let data = MatrixSessionData {
+            user_id: "@alice:example.com".into(),
+            device_id: "DEVICEABC".into(),
+            access_token: "syt_token_123".into(),
+        };
+        assert_eq!(data.user_id, "@alice:example.com");
+        assert_eq!(data.device_id, "DEVICEABC");
+        assert_eq!(data.access_token, "syt_token_123");
+    }
+
+    #[test]
+    fn matrix_session_data_clone() {
+        let data = MatrixSessionData {
+            user_id: "@bob:example.com".into(),
+            device_id: "DEV456".into(),
+            access_token: "tok".into(),
+        };
+        let cloned = data.clone();
+        assert_eq!(data.user_id, cloned.user_id);
+        assert_eq!(data.device_id, cloned.device_id);
+        assert_eq!(data.access_token, cloned.access_token);
     }
 }

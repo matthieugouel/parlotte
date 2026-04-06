@@ -1,8 +1,25 @@
 uniffi::setup_scaffolding!();
 
+/// Initialize logging with the given level filter (e.g. "debug", "info", "warn").
+/// Only the first call has effect; subsequent calls are ignored.
+#[uniffi::export]
+pub fn init_logging(level: String) {
+    use tracing_subscriber::EnvFilter;
+
+    let filter = EnvFilter::try_new(format!("parlotte_core={level}"))
+        .unwrap_or_else(|_| EnvFilter::new("parlotte_core=info"));
+
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .try_init();
+}
+
 use parlotte_core::{
-    MessageInfo as CoreMessageInfo, ParlotteClient as CoreClient, ParlotteError as CoreError,
-    RoomInfo as CoreRoomInfo, SessionInfo as CoreSessionInfo,
+    MatrixSessionData as CoreMatrixSessionData, MessageInfo as CoreMessageInfo,
+    ParlotteClient as CoreClient, ParlotteError as CoreError,
+    PublicRoomInfo as CorePublicRoomInfo, RoomInfo as CoreRoomInfo,
+    SessionInfo as CoreSessionInfo,
 };
 use std::fmt;
 
@@ -51,7 +68,9 @@ pub struct RoomInfo {
     pub id: String,
     pub display_name: String,
     pub is_encrypted: bool,
+    pub is_public: bool,
     pub topic: Option<String>,
+    pub is_invited: bool,
 }
 
 impl From<CoreRoomInfo> for RoomInfo {
@@ -60,7 +79,9 @@ impl From<CoreRoomInfo> for RoomInfo {
             id: r.id,
             display_name: r.display_name,
             is_encrypted: r.is_encrypted,
+            is_public: r.is_public,
             topic: r.topic,
+            is_invited: r.is_invited,
         }
     }
 }
@@ -99,6 +120,54 @@ impl From<CoreSessionInfo> for SessionInfo {
     }
 }
 
+#[derive(uniffi::Record)]
+pub struct MatrixSessionData {
+    pub user_id: String,
+    pub device_id: String,
+    pub access_token: String,
+}
+
+impl From<CoreMatrixSessionData> for MatrixSessionData {
+    fn from(s: CoreMatrixSessionData) -> Self {
+        Self {
+            user_id: s.user_id,
+            device_id: s.device_id,
+            access_token: s.access_token,
+        }
+    }
+}
+
+impl From<MatrixSessionData> for CoreMatrixSessionData {
+    fn from(s: MatrixSessionData) -> Self {
+        Self {
+            user_id: s.user_id,
+            device_id: s.device_id,
+            access_token: s.access_token,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct PublicRoomInfo {
+    pub id: String,
+    pub name: Option<String>,
+    pub topic: Option<String>,
+    pub member_count: u64,
+    pub alias: Option<String>,
+}
+
+impl From<CorePublicRoomInfo> for PublicRoomInfo {
+    fn from(r: CorePublicRoomInfo) -> Self {
+        Self {
+            id: r.id,
+            name: r.name,
+            topic: r.topic,
+            member_count: r.member_count,
+            alias: r.alias,
+        }
+    }
+}
+
 // -- Callback interface --
 
 #[uniffi::export(callback_interface)]
@@ -126,6 +195,14 @@ impl ParlotteClientFFI {
         Ok(self.inner.login(&username, &password)?.into())
     }
 
+    pub fn session(&self) -> Option<MatrixSessionData> {
+        self.inner.session().map(Into::into)
+    }
+
+    pub fn restore_session(&self, session_data: MatrixSessionData) -> Result<(), ParlotteError> {
+        Ok(self.inner.restore_session(session_data.into())?)
+    }
+
     pub fn logout(&self) -> Result<(), ParlotteError> {
         Ok(self.inner.logout()?)
     }
@@ -138,12 +215,20 @@ impl ParlotteClientFFI {
         Ok(self.inner.send_message(&room_id, &body)?)
     }
 
+    pub fn messages(&self, room_id: String, limit: u64) -> Result<Vec<MessageInfo>, ParlotteError> {
+        Ok(self.inner.messages(&room_id, limit)?.into_iter().map(Into::into).collect())
+    }
+
     pub fn sync_once(&self) -> Result<(), ParlotteError> {
         Ok(self.inner.sync_once()?)
     }
 
-    pub fn create_room(&self, name: String) -> Result<String, ParlotteError> {
-        Ok(self.inner.create_room(&name)?)
+    pub fn create_room(&self, name: String, is_public: bool) -> Result<String, ParlotteError> {
+        Ok(self.inner.create_room(&name, is_public)?)
+    }
+
+    pub fn public_rooms(&self) -> Result<Vec<PublicRoomInfo>, ParlotteError> {
+        Ok(self.inner.public_rooms()?.into_iter().map(Into::into).collect())
     }
 
     pub fn invite_user(&self, room_id: String, user_id: String) -> Result<(), ParlotteError> {

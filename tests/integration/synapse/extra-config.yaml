@@ -4,6 +4,12 @@ enable_registration: true
 enable_registration_without_verification: true
 suppress_key_server_warning: true
 
+# Allow room directory publication
+allow_public_rooms_without_auth: true
+allow_public_rooms_over_federation: false
+room_list_publication_rules:
+  - action: allow
+
 # Disable rate limiting for tests
 rc_message:
   per_second: 1000

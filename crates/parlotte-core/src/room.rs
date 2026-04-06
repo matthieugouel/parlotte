@@ -1,4 +1,4 @@
-/// Summary information about a joined room.
+/// Summary information about a joined or invited room.
 #[derive(Debug, Clone)]
 pub struct RoomInfo {
     /// The Matrix room ID (e.g., `!abc123:example.com`).
@@ -7,8 +7,27 @@ pub struct RoomInfo {
     pub display_name: String,
     /// Whether the room has encryption enabled.
     pub is_encrypted: bool,
+    /// Whether the room is publicly joinable.
+    pub is_public: bool,
     /// The topic of the room, if set.
     pub topic: Option<String>,
+    /// Whether this is a pending invite (not yet joined).
+    pub is_invited: bool,
+}
+
+/// Summary of a room from the public directory.
+#[derive(Debug, Clone)]
+pub struct PublicRoomInfo {
+    /// The Matrix room ID.
+    pub id: String,
+    /// The room name, if set.
+    pub name: Option<String>,
+    /// The room topic, if set.
+    pub topic: Option<String>,
+    /// Number of joined members.
+    pub member_count: u64,
+    /// The canonical room alias (e.g., `#general:example.com`).
+    pub alias: Option<String>,
 }
 
 #[cfg(test)]
@@ -21,12 +40,16 @@ mod tests {
             id: "!abc:example.com".into(),
             display_name: "Test Room".into(),
             is_encrypted: true,
+            is_public: false,
             topic: Some("A topic".into()),
+            is_invited: false,
         };
         assert_eq!(room.id, "!abc:example.com");
         assert_eq!(room.display_name, "Test Room");
         assert!(room.is_encrypted);
+        assert!(!room.is_public);
         assert_eq!(room.topic.as_deref(), Some("A topic"));
+        assert!(!room.is_invited);
     }
 
     #[test]
@@ -35,9 +58,12 @@ mod tests {
             id: "!xyz:example.com".into(),
             display_name: "No Topic".into(),
             is_encrypted: false,
+            is_public: true,
             topic: None,
+            is_invited: false,
         };
         assert!(!room.is_encrypted);
+        assert!(room.is_public);
         assert!(room.topic.is_none());
     }
 
@@ -47,7 +73,9 @@ mod tests {
             id: "!abc:example.com".into(),
             display_name: "Cloned".into(),
             is_encrypted: false,
+            is_public: false,
             topic: None,
+            is_invited: false,
         };
         let cloned = room.clone();
         assert_eq!(room.id, cloned.id);
