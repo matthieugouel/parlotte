@@ -10,13 +10,22 @@ final class AppState {
     var isLoading = false
     var isCheckingSession = true
     var errorMessage: String?
+    var loggedInUserId: String?
+    var isSyncActive = false
 
     var rooms: [RoomInfo] = []
     var selectedRoomId: String? {
         didSet {
             messages = []
-            if selectedRoomId != nil {
-                Task { await refreshMessages() }
+            if let roomId = selectedRoomId {
+                // Optimistically clear unread count immediately
+                if let idx = rooms.firstIndex(where: { $0.id == roomId }) {
+                    rooms[idx].unreadCount = 0
+                }
+                Task {
+                    await refreshMessages()
+                    await sendReadReceiptForLatestMessage()
+                }
             }
         }
     }
@@ -42,8 +51,10 @@ final class AppState {
             let storePath = storePath()
             let client = try MatrixClient(homeserverURL: homeserverURL, storePath: storePath)
             _ = try await client.login(username: username, password: password)
-            saveSession(await client.session(), homeserverURL: homeserverURL)
+            let session = await client.session()
+            saveSession(session, homeserverURL: homeserverURL)
             self.client = client
+            self.loggedInUserId = session?.userId
             password = ""
             isLoggedIn = true
             try await client.syncOnce()
@@ -72,6 +83,7 @@ final class AppState {
             ))
             self.homeserverURL = saved.homeserverURL
             self.client = client
+            self.loggedInUserId = saved.userId
             await refreshRooms()
             isLoggedIn = true
             isCheckingSession = false
@@ -91,6 +103,7 @@ final class AppState {
         try? await client?.logout()
         client = nil
         isLoggedIn = false
+        loggedInUserId = nil
         rooms = []
         selectedRoomId = nil
         clearSavedSession()
@@ -100,7 +113,13 @@ final class AppState {
     func refreshRooms() async {
         guard let client else { return }
         do {
-            rooms = try await client.rooms()
+            var updated = try await client.rooms()
+            // Clear unread count for the room the user is currently viewing
+            if let selected = selectedRoomId,
+               let idx = updated.firstIndex(where: { $0.id == selected }) {
+                updated[idx].unreadCount = 0
+            }
+            rooms = updated
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -188,6 +207,16 @@ final class AppState {
         }
     }
 
+    func sendReadReceipt(roomId: String) async {
+        guard let client, let lastMessage = messages.last else { return }
+        do {
+            try await client.sendReadReceipt(roomId: roomId, eventId: lastMessage.eventId)
+            await refreshRooms()
+        } catch {
+            // Non-fatal — read receipts are best-effort
+        }
+    }
+
     func inviteUser(userId: String) async {
         guard let client, let roomId = selectedRoomId else { return }
         do {
@@ -197,8 +226,14 @@ final class AppState {
         }
     }
 
+    private func sendReadReceiptForLatestMessage() async {
+        guard let roomId = selectedRoomId else { return }
+        await sendReadReceipt(roomId: roomId)
+    }
+
     private func startSyncLoop() {
         syncTask?.cancel()
+        isSyncActive = true
         syncTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
@@ -208,10 +243,12 @@ final class AppState {
                     try await client.syncOnce()
                     await self.refreshRooms()
                     await self.refreshMessages()
+                    await self.sendReadReceiptForLatestMessage()
                 } catch {
                     // Sync errors are transient — retry next cycle
                 }
             }
+            if let self { self.isSyncActive = false }
         }
     }
 

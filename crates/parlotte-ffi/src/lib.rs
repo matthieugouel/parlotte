@@ -71,6 +71,7 @@ pub struct RoomInfo {
     pub is_public: bool,
     pub topic: Option<String>,
     pub is_invited: bool,
+    pub unread_count: u64,
 }
 
 impl From<CoreRoomInfo> for RoomInfo {
@@ -82,6 +83,7 @@ impl From<CoreRoomInfo> for RoomInfo {
             is_public: r.is_public,
             topic: r.topic,
             is_invited: r.is_invited,
+            unread_count: r.unread_count,
         }
     }
 }
@@ -264,6 +266,10 @@ impl ParlotteClientFFI {
 
     pub fn room_members(&self, room_id: String) -> Result<Vec<RoomMemberInfo>, ParlotteError> {
         Ok(self.inner.room_members(&room_id)?.into_iter().map(Into::into).collect())
+    }
+
+    pub fn send_read_receipt(&self, room_id: String, event_id: String) -> Result<(), ParlotteError> {
+        Ok(self.inner.send_read_receipt(&room_id, &event_id)?)
     }
 
     pub fn is_syncing(&self) -> bool {

@@ -13,6 +13,8 @@ pub struct RoomInfo {
     pub topic: Option<String>,
     /// Whether this is a pending invite (not yet joined).
     pub is_invited: bool,
+    /// Number of unread notifications in this room.
+    pub unread_count: u64,
 }
 
 /// Summary of a room from the public directory.
@@ -56,6 +58,7 @@ mod tests {
             is_public: false,
             topic: Some("A topic".into()),
             is_invited: false,
+            unread_count: 0,
         };
         assert_eq!(room.id, "!abc:example.com");
         assert_eq!(room.display_name, "Test Room");
@@ -74,6 +77,7 @@ mod tests {
             is_public: true,
             topic: None,
             is_invited: false,
+            unread_count: 0,
         };
         assert!(!room.is_encrypted);
         assert!(room.is_public);
@@ -89,6 +93,7 @@ mod tests {
             is_public: false,
             topic: None,
             is_invited: false,
+            unread_count: 0,
         };
         let cloned = room.clone();
         assert_eq!(room.id, cloned.id);

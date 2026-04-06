@@ -190,6 +190,13 @@ impl ParlotteClient {
 
                 let is_public = room.is_public().unwrap_or(false);
 
+                let counts = room.unread_notification_counts();
+                let unread_count = if counts.notification_count > 0 {
+                    counts.notification_count
+                } else {
+                    room.num_unread_messages()
+                };
+
                 rooms.push(RoomInfo {
                     id: room.room_id().to_string(),
                     display_name,
@@ -197,6 +204,7 @@ impl ParlotteClient {
                     is_public,
                     topic,
                     is_invited: false,
+                    unread_count,
                 });
             }
 
@@ -222,6 +230,7 @@ impl ParlotteClient {
                     is_public,
                     topic,
                     is_invited: true,
+                    unread_count: 0,
                 });
             }
 
@@ -517,6 +526,42 @@ impl ParlotteClient {
         })
     }
 
+    /// Send a read receipt for the given event in a room.
+    pub fn send_read_receipt(&self, room_id: &str, event_id: &str) -> Result<()> {
+        use matrix_sdk::ruma::events::receipt::ReceiptThread;
+        use matrix_sdk::ruma::OwnedEventId;
+
+        let client = self.client();
+        self.runtime.block_on(async {
+            let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid room ID: {e}"),
+            })?;
+
+            let room = client
+                .get_room(room_id)
+                .ok_or_else(|| ParlotteError::Room {
+                    message: format!("room {room_id} not found"),
+                })?;
+
+            let event_id: OwnedEventId =
+                event_id.try_into().map_err(|e: matrix_sdk::ruma::IdParseError| ParlotteError::Room {
+                    message: format!("invalid event ID: {e}"),
+                })?;
+
+            room.send_single_receipt(
+                matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType::Read,
+                ReceiptThread::Unthreaded,
+                event_id,
+            )
+            .await
+            .map_err(|e| ParlotteError::Room {
+                message: format!("failed to send read receipt: {e}"),
+            })?;
+
+            Ok(())
+        })
+    }
+
     /// Get the list of members in a room.
     pub fn room_members(&self, room_id: &str) -> Result<Vec<RoomMemberInfo>> {
         use matrix_sdk::RoomMemberships;
@@ -693,6 +738,24 @@ mod tests {
     fn room_members_rejects_nonexistent_room() {
         let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
         let result = client.room_members("!nonexistent:example.com");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ParlotteError::Room { .. }));
+        assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn send_read_receipt_rejects_invalid_room_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.send_read_receipt("garbage", "$event:example.com");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
+    }
+
+    #[test]
+    fn send_read_receipt_rejects_nonexistent_room() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.send_read_receipt("!room:example.com", "$event:example.com");
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, ParlotteError::Room { .. }));

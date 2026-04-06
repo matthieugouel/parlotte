@@ -419,6 +419,45 @@ mod tests {
         let _ = std::fs::remove_dir_all(&bob_store);
     }
 
+    // -- Test: Unread count and read receipts --
+
+    #[test]
+    fn unread_count_and_read_receipt() {
+        require_synapse();
+        let (alice, _alice_id) = register_and_login("unread_alice");
+        let (bob, bob_id) = register_and_login("unread_bob");
+
+        // Alice creates a room and invites Bob
+        let room_id = alice.create_room("Unread Test", false).unwrap();
+        alice.sync_once().unwrap();
+        alice.invite_user(&room_id, &bob_id).unwrap();
+
+        bob.sync_once().unwrap();
+        bob.join_room(&room_id).unwrap();
+        alice.sync_once().unwrap();
+        bob.sync_once().unwrap();
+
+        // Alice sends a message
+        alice.send_message(&room_id, "Unread message").unwrap();
+        bob.sync_once().unwrap();
+
+        // Bob should have unread notifications
+        let bob_rooms = bob.rooms().unwrap();
+        let room = bob_rooms.iter().find(|r| r.id == room_id).unwrap();
+        assert!(room.unread_count > 0, "Bob should have unread notifications");
+
+        // Bob reads the messages and sends a read receipt
+        let bob_msgs = bob.messages(&room_id, 50).unwrap();
+        let last_event_id = &bob_msgs.last().unwrap().event_id;
+        bob.send_read_receipt(&room_id, last_event_id).unwrap();
+        bob.sync_once().unwrap();
+
+        // After sending the read receipt and syncing, unread count should be 0
+        let bob_rooms = bob.rooms().unwrap();
+        let room = bob_rooms.iter().find(|r| r.id == room_id).unwrap();
+        assert_eq!(room.unread_count, 0, "Unread count should be 0 after read receipt");
+    }
+
     // -- Test: Public room discovery and join --
 
     #[test]

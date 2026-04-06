@@ -35,7 +35,8 @@
 - [ ] Markdown / rich text rendering
 
 ## UX
-- [ ] Unread indicators / notification badges
+- [x] Unread indicators / notification badges
+- [x] Read receipts (mark rooms as read)
 - [ ] Room ordering by recent activity
 - [ ] User profile (display name, avatar)
 - [ ] Search (messages, rooms)

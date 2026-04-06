@@ -10,6 +10,33 @@ struct RoomListView: View {
         @Bindable var appState = appState
 
         VStack(spacing: 0) {
+            // User header
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if let userId = appState.loggedInUserId {
+                        Text(localpart(from: userId))
+                            .font(.title3)
+                            .fontWeight(.semibold)
+
+                        Text(serverName(from: userId))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                Circle()
+                    .fill(appState.isSyncActive ? .green : .orange)
+                    .frame(width: 8, height: 8)
+                    .help(appState.isSyncActive ? "Connected" : "Disconnected")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+
+            Divider()
+                .opacity(0.3)
+
             List(selection: $appState.selectedRoomId) {
                 ForEach(appState.rooms, id: \.id) { room in
                     HStack(spacing: 10) {
@@ -33,6 +60,17 @@ struct RoomListView: View {
                         }
 
                         Spacer()
+
+                        if room.unreadCount > 0 {
+                            Text("\(room.unreadCount)")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.blue)
+                                .clipShape(Capsule())
+                        }
 
                         if room.isEncrypted {
                             Image(systemName: "shield.lefthalf.filled")
@@ -104,5 +142,21 @@ struct RoomListView: View {
             ExploreRoomsView()
                 .environment(appState)
         }
+    }
+
+    private func localpart(from userId: String) -> String {
+        // "@alice:server" -> "alice"
+        if userId.hasPrefix("@"), let colon = userId.firstIndex(of: ":") {
+            return String(userId[userId.index(after: userId.startIndex)..<colon])
+        }
+        return userId
+    }
+
+    private func serverName(from userId: String) -> String {
+        // "@alice:server" -> "server"
+        if let colon = userId.firstIndex(of: ":") {
+            return String(userId[userId.index(after: colon)...])
+        }
+        return ""
     }
 }
