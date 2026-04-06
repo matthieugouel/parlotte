@@ -36,7 +36,6 @@ final class AppState {
     var password = ""
 
     private var client: MatrixClient?
-    private var syncTask: Task<Void, Never>?
 
     init(profile: String = "default") {
         self.profile = profile
@@ -98,8 +97,8 @@ final class AppState {
     }
 
     func logout() async {
-        syncTask?.cancel()
-        syncTask = nil
+        client?.stopSync()
+        isSyncActive = false
         try? await client?.logout()
         client = nil
         isLoggedIn = false
@@ -144,8 +143,7 @@ final class AppState {
 
         do {
             try await client.sendMessage(roomId: roomId, body: trimmed)
-            try await client.syncOnce()
-            await refreshMessages()
+            // Persistent sync will pick up the new message; no syncOnce needed
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -155,8 +153,6 @@ final class AppState {
         guard let client else { return }
         do {
             _ = try await client.createRoom(name: name, isPublic: isPublic)
-            try await client.syncOnce()
-            await refreshRooms()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -176,8 +172,6 @@ final class AppState {
         guard let client else { return }
         do {
             try await client.joinRoom(roomId: roomId)
-            try await client.syncOnce()
-            await refreshRooms()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -200,8 +194,6 @@ final class AppState {
             if selectedRoomId == roomId {
                 selectedRoomId = nil
             }
-            try await client.syncOnce()
-            await refreshRooms()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -211,7 +203,6 @@ final class AppState {
         guard let client, let lastMessage = messages.last else { return }
         do {
             try await client.sendReadReceipt(roomId: roomId, eventId: lastMessage.eventId)
-            await refreshRooms()
         } catch {
             // Non-fatal — read receipts are best-effort
         }
@@ -226,29 +217,20 @@ final class AppState {
         }
     }
 
-    private func sendReadReceiptForLatestMessage() async {
+    fileprivate func sendReadReceiptForLatestMessage() async {
         guard let roomId = selectedRoomId else { return }
         await sendReadReceipt(roomId: roomId)
     }
 
     private func startSyncLoop() {
-        syncTask?.cancel()
+        guard let client else { return }
         isSyncActive = true
-        syncTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(5))
-                guard !Task.isCancelled else { break }
-                guard let self, let client = self.client else { break }
-                do {
-                    try await client.syncOnce()
-                    await self.refreshRooms()
-                    await self.refreshMessages()
-                    await self.sendReadReceiptForLatestMessage()
-                } catch {
-                    // Sync errors are transient — retry next cycle
-                }
-            }
-            if let self { self.isSyncActive = false }
+
+        let listener = SyncUpdateHandler(appState: self)
+        do {
+            try client.startSync(listener: listener)
+        } catch {
+            isSyncActive = false
         }
     }
 
@@ -318,5 +300,24 @@ final class AppState {
         d.removeObject(forKey: key("userId"))
         d.removeObject(forKey: key("deviceId"))
         d.removeObject(forKey: key("accessToken"))
+    }
+}
+
+/// Bridge from Rust sync callback to Swift MainActor.
+/// Called on a background thread by the Rust sync loop.
+private final class SyncUpdateHandler: ParlotteSyncListener, @unchecked Sendable {
+    private weak var appState: AppState?
+
+    init(appState: AppState) {
+        self.appState = appState
+    }
+
+    func onSyncUpdate() {
+        Task { @MainActor [weak appState] in
+            guard let appState else { return }
+            await appState.refreshRooms()
+            await appState.refreshMessages()
+            await appState.sendReadReceiptForLatestMessage()
+        }
     }
 }

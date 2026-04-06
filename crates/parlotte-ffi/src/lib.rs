@@ -22,6 +22,7 @@ use parlotte_core::{
     RoomMemberInfo as CoreRoomMemberInfo, SessionInfo as CoreSessionInfo,
 };
 use std::fmt;
+use std::sync::Arc;
 
 // -- Error type exposed via UniFFI --
 
@@ -189,12 +190,28 @@ impl From<CoreRoomMemberInfo> for RoomMemberInfo {
     }
 }
 
-// -- Callback interface --
+// -- Callback interfaces --
 
+/// Callback for persistent sync updates.
+/// Called after each successful sync response.
 #[uniffi::export(callback_interface)]
-pub trait ParlotteEventListener: Send + Sync {
-    fn on_message(&self, room_id: String, sender: String, body: String, timestamp_ms: u64);
-    fn on_sync_state_changed(&self, is_syncing: bool);
+pub trait ParlotteSyncListener: Send + Sync {
+    fn on_sync_update(&self);
+}
+
+/// Bridge from the FFI callback to the core SyncListener trait.
+struct SyncListenerBridge {
+    inner: Box<dyn ParlotteSyncListener>,
+}
+
+// Safety: ParlotteSyncListener requires Send + Sync
+unsafe impl Send for SyncListenerBridge {}
+unsafe impl Sync for SyncListenerBridge {}
+
+impl parlotte_core::SyncListener for SyncListenerBridge {
+    fn on_sync_update(&self) {
+        self.inner.on_sync_update();
+    }
 }
 
 // -- Main client object --
@@ -270,6 +287,15 @@ impl ParlotteClientFFI {
 
     pub fn send_read_receipt(&self, room_id: String, event_id: String) -> Result<(), ParlotteError> {
         Ok(self.inner.send_read_receipt(&room_id, &event_id)?)
+    }
+
+    pub fn start_sync(&self, listener: Box<dyn ParlotteSyncListener>) -> Result<(), ParlotteError> {
+        let bridge = Arc::new(SyncListenerBridge { inner: listener });
+        Ok(self.inner.start_sync(bridge)?)
+    }
+
+    pub fn stop_sync(&self) {
+        self.inner.stop_sync();
     }
 
     pub fn is_syncing(&self) -> bool {

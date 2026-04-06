@@ -1,26 +1,16 @@
 use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::room::MessagesOptions;
-use matrix_sdk::ruma::events::room::message::{
-    OriginalSyncRoomMessageEvent, RoomMessageEventContent,
-};
+use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
 use matrix_sdk::ruma::events::AnySyncTimelineEvent;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use matrix_sdk::store::RoomLoadSettings;
 use matrix_sdk::{Client, SessionMeta, SessionTokens};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::error::{ParlotteError, Result};
 use crate::message::{MatrixSessionData, MessageInfo, SessionInfo};
 use crate::room::{PublicRoomInfo, RoomInfo, RoomMemberInfo};
-use crate::sync::SyncManager;
-
-/// Callback interface for receiving Matrix events.
-pub trait EventListener: Send + Sync + 'static {
-    /// Called when a new message is received in a room.
-    fn on_message(&self, room_id: String, sender: String, body: String, timestamp_ms: u64);
-    /// Called when the sync state changes.
-    fn on_sync_state_changed(&self, is_syncing: bool);
-}
+use crate::sync::{SyncListener, SyncManager};
 
 /// The main Parlotte client wrapping the Matrix SDK.
 pub struct ParlotteClient {
@@ -28,7 +18,6 @@ pub struct ParlotteClient {
     inner: Option<Client>,
     runtime: tokio::runtime::Runtime,
     sync_manager: SyncManager,
-    event_listener: Arc<Mutex<Option<Arc<dyn EventListener>>>>,
 }
 
 impl ParlotteClient {
@@ -62,19 +51,7 @@ impl ParlotteClient {
             inner: Some(client),
             runtime,
             sync_manager: SyncManager::new(),
-            event_listener: Arc::new(Mutex::new(None)),
         })
-    }
-
-    /// Create a client from an existing matrix_sdk::Client and runtime.
-    /// Primarily used for testing.
-    pub(crate) fn from_inner(client: Client, runtime: tokio::runtime::Runtime) -> Self {
-        Self {
-            inner: Some(client),
-            runtime,
-            sync_manager: SyncManager::new(),
-            event_listener: Arc::new(Mutex::new(None)),
-        }
     }
 
     /// Log in with username and password.
@@ -334,30 +311,20 @@ impl ParlotteClient {
         result
     }
 
-    /// Register an event listener to receive incoming messages and state changes.
-    pub fn set_event_listener(&self, listener: Arc<dyn EventListener>) {
-        let listener_clone = listener.clone();
-        *self.event_listener.lock().unwrap() = Some(listener);
+    /// Start a persistent sync loop in the background.
+    /// The listener is called after each successful sync response.
+    /// Uses long-polling (30s timeout) instead of periodic polling.
+    pub fn start_sync(&self, listener: Arc<dyn SyncListener>) -> Result<()> {
+        self.sync_manager.start_persistent_sync(
+            self.client().clone(),
+            &self.runtime,
+            listener,
+        )
+    }
 
-        self.client().add_event_handler(
-            move |ev: OriginalSyncRoomMessageEvent, room: matrix_sdk::Room| {
-                let listener = listener_clone.clone();
-                async move {
-                    let body = match ev.content.msgtype {
-                        matrix_sdk::ruma::events::room::message::MessageType::Text(text) => {
-                            text.body
-                        }
-                        _ => return,
-                    };
-                    listener.on_message(
-                        room.room_id().to_string(),
-                        ev.sender.to_string(),
-                        body,
-                        ev.origin_server_ts.0.into(),
-                    );
-                }
-            },
-        );
+    /// Stop the persistent sync loop.
+    pub fn stop_sync(&self) {
+        self.sync_manager.stop();
     }
 
     /// Check if sync is currently running.
@@ -368,11 +335,6 @@ impl ParlotteClient {
     /// Access the underlying matrix_sdk::Client (for advanced usage / tests).
     pub fn inner(&self) -> &Client {
         self.client()
-    }
-
-    /// Access the tokio runtime (for tests).
-    pub(crate) fn runtime(&self) -> &tokio::runtime::Runtime {
-        &self.runtime
     }
 
     /// Create a room with the given name. Returns the room ID.
@@ -620,7 +582,6 @@ impl Drop for ParlotteClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
 
     // -- Tests for our input validation and error mapping --
 
@@ -773,49 +734,6 @@ mod tests {
     fn is_syncing_returns_false_initially() {
         let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
         assert!(!client.is_syncing());
-    }
-
-    // -- Tests for EventListener registration --
-
-    struct TestListener {
-        message_count: AtomicU32,
-    }
-
-    impl TestListener {
-        fn new() -> Self {
-            Self {
-                message_count: AtomicU32::new(0),
-            }
-        }
-        fn count(&self) -> u32 {
-            self.message_count.load(Ordering::SeqCst)
-        }
-    }
-
-    impl EventListener for TestListener {
-        fn on_message(&self, _room_id: String, _sender: String, _body: String, _ts: u64) {
-            self.message_count.fetch_add(1, Ordering::SeqCst);
-        }
-        fn on_sync_state_changed(&self, _is_syncing: bool) {}
-    }
-
-    #[test]
-    fn set_event_listener_does_not_panic() {
-        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
-        let listener = Arc::new(TestListener::new());
-        client.set_event_listener(listener.clone());
-        // No messages received yet since we haven't synced
-        assert_eq!(listener.count(), 0);
-    }
-
-    #[test]
-    fn set_event_listener_replaces_previous() {
-        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
-        let listener1 = Arc::new(TestListener::new());
-        let listener2 = Arc::new(TestListener::new());
-        client.set_event_listener(listener1);
-        client.set_event_listener(listener2);
-        // Should not panic — second registration replaces stored listener
     }
 
     #[test]

@@ -112,6 +112,14 @@ public actor MatrixClient {
         }.value
     }
 
+    public nonisolated func startSync(listener: ParlotteSyncListener) throws {
+        try ffi.startSync(listener: listener)
+    }
+
+    public nonisolated func stopSync() {
+        ffi.stopSync()
+    }
+
     public nonisolated var isSyncing: Bool {
         ffi.isSyncing()
     }

@@ -6,7 +6,7 @@
 - [x] Integration tests against real Synapse server
 - [x] Multi-profile support (`--profile` flag for testing)
 - [x] Debug logging (`--debug` flag)
-- [ ] Background sync (persistent connection instead of 5s polling)
+- [x] Background sync (persistent connection instead of 5s polling)
 - [ ] Push notifications
 - [ ] Sliding Sync (performance at scale)
 
@@ -37,7 +37,6 @@
 ## UX
 - [x] Unread indicators / notification badges
 - [x] Read receipts (mark rooms as read)
-- [ ] Room ordering by recent activity
 - [ ] User profile (display name, avatar)
 - [ ] Search (messages, rooms)
 
