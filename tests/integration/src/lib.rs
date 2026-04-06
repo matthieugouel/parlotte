@@ -311,6 +311,37 @@ mod tests {
         assert_eq!(client.rooms().unwrap().len(), 0);
     }
 
+    // -- Test: Room members --
+
+    #[test]
+    fn room_members_list() {
+        require_synapse();
+        let (alice, _alice_id) = register_and_login("members_alice");
+        let (bob, bob_id) = register_and_login("members_bob");
+
+        // Alice creates a room and invites Bob
+        let room_id = alice.create_room("Members Test", false).unwrap();
+        alice.sync_once().unwrap();
+        alice.invite_user(&room_id, &bob_id).unwrap();
+
+        bob.sync_once().unwrap();
+        bob.join_room(&room_id).unwrap();
+        alice.sync_once().unwrap();
+        bob.sync_once().unwrap();
+
+        // Alice should see both members
+        let members = alice.room_members(&room_id).unwrap();
+        assert_eq!(members.len(), 2, "Room should have 2 members");
+
+        // Alice is the creator, should be admin
+        let alice_member = members.iter().find(|m| m.user_id == _alice_id).unwrap();
+        assert_eq!(alice_member.role, "admin");
+
+        // Bob is a regular member
+        let bob_member = members.iter().find(|m| m.user_id == bob_id).unwrap();
+        assert_eq!(bob_member.role, "member");
+    }
+
     // -- Test: Multiple syncs are idempotent --
 
     #[test]

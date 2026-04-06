@@ -19,7 +19,7 @@ use parlotte_core::{
     MatrixSessionData as CoreMatrixSessionData, MessageInfo as CoreMessageInfo,
     ParlotteClient as CoreClient, ParlotteError as CoreError,
     PublicRoomInfo as CorePublicRoomInfo, RoomInfo as CoreRoomInfo,
-    SessionInfo as CoreSessionInfo,
+    RoomMemberInfo as CoreRoomMemberInfo, SessionInfo as CoreSessionInfo,
 };
 use std::fmt;
 
@@ -168,6 +168,25 @@ impl From<CorePublicRoomInfo> for PublicRoomInfo {
     }
 }
 
+#[derive(uniffi::Record)]
+pub struct RoomMemberInfo {
+    pub user_id: String,
+    pub display_name: Option<String>,
+    pub power_level: i64,
+    pub role: String,
+}
+
+impl From<CoreRoomMemberInfo> for RoomMemberInfo {
+    fn from(m: CoreRoomMemberInfo) -> Self {
+        Self {
+            user_id: m.user_id,
+            display_name: m.display_name,
+            power_level: m.power_level,
+            role: m.role,
+        }
+    }
+}
+
 // -- Callback interface --
 
 #[uniffi::export(callback_interface)]
@@ -241,6 +260,10 @@ impl ParlotteClientFFI {
 
     pub fn leave_room(&self, room_id: String) -> Result<(), ParlotteError> {
         Ok(self.inner.leave_room(&room_id)?)
+    }
+
+    pub fn room_members(&self, room_id: String) -> Result<Vec<RoomMemberInfo>, ParlotteError> {
+        Ok(self.inner.room_members(&room_id)?.into_iter().map(Into::into).collect())
     }
 
     pub fn is_syncing(&self) -> bool {

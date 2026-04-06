@@ -18,7 +18,7 @@
 - [x] Invite users to rooms
 - [x] Accept invites
 - [x] Leave room
-- [ ] Room member list
+- [x] Room member list
 - [ ] Room settings (name, topic)
 - [ ] Room avatars
 - [ ] Admin actions (kick, ban, change power levels)

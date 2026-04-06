@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::error::{ParlotteError, Result};
 use crate::message::{MatrixSessionData, MessageInfo, SessionInfo};
-use crate::room::{PublicRoomInfo, RoomInfo};
+use crate::room::{PublicRoomInfo, RoomInfo, RoomMemberInfo};
 use crate::sync::SyncManager;
 
 /// Callback interface for receiving Matrix events.
@@ -516,6 +516,48 @@ impl ParlotteClient {
             Ok(())
         })
     }
+
+    /// Get the list of members in a room.
+    pub fn room_members(&self, room_id: &str) -> Result<Vec<RoomMemberInfo>> {
+        use matrix_sdk::RoomMemberships;
+
+        let client = self.client();
+        self.runtime.block_on(async {
+            let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid room ID: {e}"),
+            })?;
+
+            let room = client
+                .get_room(room_id)
+                .ok_or_else(|| ParlotteError::Room {
+                    message: format!("room {room_id} not found"),
+                })?;
+
+            let members = room
+                .members(RoomMemberships::JOIN)
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to fetch members: {e}"),
+                })?;
+
+            Ok(members
+                .into_iter()
+                .map(|m| RoomMemberInfo {
+                    user_id: m.user_id().to_string(),
+                    display_name: m.display_name().map(|s| s.to_owned()),
+                    power_level: match m.power_level() {
+                        matrix_sdk::ruma::events::room::power_levels::UserPowerLevel::Int(n) => n.into(),
+                        _ => 100,
+                    },
+                    role: match m.suggested_role_for_power_level() {
+                        matrix_sdk::room::RoomMemberRole::Administrator => "admin".to_owned(),
+                        matrix_sdk::room::RoomMemberRole::Moderator => "moderator".to_owned(),
+                        _ => "member".to_owned(),
+                    },
+                })
+                .collect())
+        })
+    }
 }
 
 impl Drop for ParlotteClient {
@@ -633,6 +675,24 @@ mod tests {
     fn leave_room_rejects_nonexistent_room() {
         let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
         let result = client.leave_room("!nonexistent:example.com");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ParlotteError::Room { .. }));
+        assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn room_members_rejects_invalid_room_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.room_members("garbage");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
+    }
+
+    #[test]
+    fn room_members_rejects_nonexistent_room() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.room_members("!nonexistent:example.com");
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, ParlotteError::Room { .. }));

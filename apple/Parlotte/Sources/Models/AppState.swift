@@ -164,6 +164,16 @@ final class AppState {
         }
     }
 
+    func fetchRoomMembers(roomId: String) async -> [RoomMemberInfo] {
+        guard let client else { return [] }
+        do {
+            return try await client.roomMembers(roomId: roomId)
+        } catch {
+            errorMessage = error.localizedDescription
+            return []
+        }
+    }
+
     func leaveRoom(roomId: String) async {
         guard let client else { return }
         do {

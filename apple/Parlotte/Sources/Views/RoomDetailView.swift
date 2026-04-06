@@ -7,6 +7,7 @@ struct RoomDetailView: View {
     @State private var showInvite = false
     @State private var inviteUserId = ""
     @State private var showLeaveConfirm = false
+    @State private var showMembers = false
 
     private var selectedRoom: some View {
         let room = appState.rooms.first { $0.id == appState.selectedRoomId }
@@ -31,6 +32,15 @@ struct RoomDetailView: View {
                         }
 
                         Spacer()
+
+                        Button {
+                            showMembers = true
+                        } label: {
+                            Image(systemName: "person.2")
+                                .font(.title3)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Members")
 
                         Button {
                             showInvite = true
@@ -162,6 +172,12 @@ struct RoomDetailView: View {
             }
             Button("Cancel", role: .cancel) {
                 inviteUserId = ""
+            }
+        }
+        .sheet(isPresented: $showMembers) {
+            if let roomId = appState.selectedRoomId {
+                MemberListView(roomId: roomId)
+                    .environment(appState)
             }
         }
         .alert("Leave Room", isPresented: $showLeaveConfirm) {

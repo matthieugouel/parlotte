@@ -30,6 +30,19 @@ pub struct PublicRoomInfo {
     pub alias: Option<String>,
 }
 
+/// Information about a room member.
+#[derive(Debug, Clone)]
+pub struct RoomMemberInfo {
+    /// The Matrix user ID (e.g., `@alice:example.com`).
+    pub user_id: String,
+    /// Display name, if set.
+    pub display_name: Option<String>,
+    /// Power level (0-100).
+    pub power_level: i64,
+    /// Role: "administrator", "moderator", or "member".
+    pub role: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

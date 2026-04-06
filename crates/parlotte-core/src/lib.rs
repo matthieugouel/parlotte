@@ -9,4 +9,4 @@ pub(crate) mod sync;
 pub use client::{EventListener, ParlotteClient};
 pub use error::ParlotteError;
 pub use message::{MatrixSessionData, MessageInfo, SessionInfo};
-pub use room::{PublicRoomInfo, RoomInfo};
+pub use room::{PublicRoomInfo, RoomInfo, RoomMemberInfo};
