@@ -21,7 +21,7 @@ struct ParlotteApp: App {
             ContentView()
                 .environment(appState)
         }
-        .defaultSize(width: 360, height: 560)
+        .defaultSize(width: 800, height: 600)
         .windowStyle(.hiddenTitleBar)
     }
 

@@ -33,7 +33,7 @@ struct LoginView: View {
             if let error = appState.errorMessage {
                 Text(error)
                     .foregroundStyle(.red)
-                    .font(.caption)
+                    .font(.callout)
                     .frame(maxWidth: 300)
             }
 
@@ -45,9 +45,11 @@ struct LoginView: View {
                         .controlSize(.small)
                 } else {
                     Text("Login")
+                        .frame(maxWidth: 300)
                 }
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             .disabled(appState.isLoading || appState.username.isEmpty || appState.password.isEmpty)
         }
         .padding(40)

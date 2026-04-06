@@ -164,6 +164,20 @@ final class AppState {
         }
     }
 
+    func leaveRoom(roomId: String) async {
+        guard let client else { return }
+        do {
+            try await client.leaveRoom(roomId: roomId)
+            if selectedRoomId == roomId {
+                selectedRoomId = nil
+            }
+            try await client.syncOnce()
+            await refreshRooms()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func inviteUser(userId: String) async {
         guard let client, let roomId = selectedRoomId else { return }
         do {

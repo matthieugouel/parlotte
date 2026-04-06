@@ -239,6 +239,10 @@ impl ParlotteClientFFI {
         Ok(self.inner.join_room(&room_id)?)
     }
 
+    pub fn leave_room(&self, room_id: String) -> Result<(), ParlotteError> {
+        Ok(self.inner.leave_room(&room_id)?)
+    }
+
     pub fn is_syncing(&self) -> bool {
         self.inner.is_syncing()
     }

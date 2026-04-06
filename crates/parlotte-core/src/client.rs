@@ -492,6 +492,30 @@ impl ParlotteClient {
             Ok(())
         })
     }
+
+    /// Leave a room by its ID.
+    pub fn leave_room(&self, room_id: &str) -> Result<()> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid room ID: {e}"),
+            })?;
+
+            let room = client
+                .get_room(room_id)
+                .ok_or_else(|| ParlotteError::Room {
+                    message: format!("room {room_id} not found"),
+                })?;
+
+            room.leave()
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to leave room: {e}"),
+                })?;
+
+            Ok(())
+        })
+    }
 }
 
 impl Drop for ParlotteClient {
@@ -595,6 +619,24 @@ mod tests {
         let result = client.join_room("garbage");
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
+    }
+
+    #[test]
+    fn leave_room_rejects_invalid_room_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.leave_room("garbage");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
+    }
+
+    #[test]
+    fn leave_room_rejects_nonexistent_room() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.leave_room("!nonexistent:example.com");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ParlotteError::Room { .. }));
+        assert!(err.to_string().contains("not found"));
     }
 
     #[test]

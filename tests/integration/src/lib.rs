@@ -295,6 +295,22 @@ mod tests {
         assert_eq!(room2.display_name, "Kitchen");
     }
 
+    // -- Test: Leave room --
+
+    #[test]
+    fn leave_room() {
+        require_synapse();
+        let (client, _) = register_and_login("leave");
+
+        let room_id = client.create_room("Goodbye Room", false).unwrap();
+        client.sync_once().unwrap();
+        assert_eq!(client.rooms().unwrap().len(), 1);
+
+        client.leave_room(&room_id).unwrap();
+        client.sync_once().unwrap();
+        assert_eq!(client.rooms().unwrap().len(), 0);
+    }
+
     // -- Test: Multiple syncs are idempotent --
 
     #[test]

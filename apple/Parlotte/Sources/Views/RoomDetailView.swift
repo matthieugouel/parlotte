@@ -6,25 +6,26 @@ struct RoomDetailView: View {
     @State private var messageText = ""
     @State private var showInvite = false
     @State private var inviteUserId = ""
+    @State private var showLeaveConfirm = false
 
     private var selectedRoom: some View {
         let room = appState.rooms.first { $0.id == appState.selectedRoomId }
         return Group {
             if let room {
-                VStack {
-                    HStack(spacing: 6) {
+                VStack(spacing: 4) {
+                    HStack(spacing: 8) {
                         Text(room.displayName)
                             .font(.title2)
                             .fontWeight(.semibold)
 
                         Image(systemName: room.isPublic ? "globe" : "lock.fill")
-                            .font(.caption)
+                            .font(.callout)
                             .foregroundStyle(.secondary)
                             .help(room.isPublic ? "Public room" : "Private room")
 
                         if room.isEncrypted {
                             Image(systemName: "shield.lefthalf.filled")
-                                .font(.caption)
+                                .font(.callout)
                                 .foregroundStyle(.green)
                                 .help("End-to-end encrypted")
                         }
@@ -35,10 +36,20 @@ struct RoomDetailView: View {
                             showInvite = true
                         } label: {
                             Image(systemName: "person.badge.plus")
-                                .font(.caption)
+                                .font(.title3)
                         }
                         .buttonStyle(.plain)
                         .help("Invite User")
+
+                        Button {
+                            showLeaveConfirm = true
+                        } label: {
+                            Image(systemName: "arrow.right.square")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Leave Room")
                     }
 
                     if let topic = room.topic, !topic.isEmpty {
@@ -63,9 +74,10 @@ struct RoomDetailView: View {
             VStack(spacing: 16) {
                 Spacer()
                 Image(systemName: "envelope.badge")
-                    .font(.largeTitle)
+                    .font(.system(size: 40))
                     .foregroundStyle(.secondary)
                 Text("You've been invited to")
+                    .font(.title3)
                     .foregroundStyle(.secondary)
                 Text(room.displayName)
                     .font(.title2)
@@ -75,6 +87,7 @@ struct RoomDetailView: View {
                         Task { await appState.joinRoom(roomId: room.id) }
                     }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                 }
                 Spacer()
             }
@@ -89,22 +102,22 @@ struct RoomDetailView: View {
             // Room header
             selectedRoom
                 .padding(.horizontal)
-                .padding(.top, 8)
-                .padding(.bottom, 8)
+                .padding(.top, 10)
+                .padding(.bottom, 10)
 
             Divider()
 
             // Message list
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 4) {
+                    LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(appState.messages, id: \.eventId) { message in
                             MessageBubble(message: message)
                                 .id(message.eventId)
                         }
                     }
                     .padding(.horizontal)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 10)
                 }
                 .onChange(of: appState.messages.count) { _, _ in
                     if let last = appState.messages.last {
@@ -118,9 +131,10 @@ struct RoomDetailView: View {
             Divider()
 
             // Compose area
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 TextField("Send a message...", text: $messageText, axis: .vertical)
                     .textFieldStyle(.plain)
+                    .font(.body)
                     .lineLimit(1...5)
                     .onSubmit {
                         send()
@@ -130,11 +144,14 @@ struct RoomDetailView: View {
                     send()
                 } label: {
                     Image(systemName: "paperplane.fill")
+                        .font(.body)
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
                 .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            .padding()
+            .padding(.horizontal)
+            .padding(.vertical, 12)
         }
         .alert("Invite User", isPresented: $showInvite) {
             TextField("@user:server", text: $inviteUserId)
@@ -146,6 +163,16 @@ struct RoomDetailView: View {
             Button("Cancel", role: .cancel) {
                 inviteUserId = ""
             }
+        }
+        .alert("Leave Room", isPresented: $showLeaveConfirm) {
+            Button("Leave", role: .destructive) {
+                if let roomId = appState.selectedRoomId {
+                    Task { await appState.leaveRoom(roomId: roomId) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Are you sure you want to leave this room?")
         }
     }
 
@@ -160,7 +187,6 @@ struct MessageBubble: View {
     let message: MessageInfo
 
     private var senderName: String {
-        // Extract localpart from @user:server
         let userId = message.sender
         if userId.hasPrefix("@"), let colonIndex = userId.firstIndex(of: ":") {
             return String(userId[userId.index(after: userId.startIndex)..<colonIndex])
@@ -169,22 +195,23 @@ struct MessageBubble: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
                 Text(senderName)
-                    .font(.caption)
+                    .font(.title3)
                     .fontWeight(.semibold)
                     .foregroundStyle(.secondary)
 
                 Text(formattedTime)
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.tertiary)
             }
 
             Text(message.body)
+                .font(.title3)
                 .textSelection(.enabled)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
     }
 
     private var formattedTime: String {

@@ -70,6 +70,13 @@ public actor MatrixClient {
         }.value
     }
 
+    public func leaveRoom(roomId: String) async throws {
+        let ffi = self.ffi
+        try await Task.detached {
+            try ffi.leaveRoom(roomId: roomId)
+        }.value
+    }
+
     public func inviteUser(roomId: String, userId: String) async throws {
         let ffi = self.ffi
         try await Task.detached {

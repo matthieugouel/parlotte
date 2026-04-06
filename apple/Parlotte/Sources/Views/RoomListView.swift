@@ -12,18 +12,19 @@ struct RoomListView: View {
         VStack(spacing: 0) {
             List(selection: $appState.selectedRoomId) {
                 ForEach(appState.rooms, id: \.id) { room in
-                    HStack(spacing: 8) {
+                    HStack(spacing: 10) {
                         Image(systemName: room.isPublic ? "globe" : "lock.fill")
-                            .font(.caption)
+                            .font(.body)
                             .foregroundStyle(.secondary)
-                            .frame(width: 16)
+                            .frame(width: 20)
 
                         Text(room.displayName)
+                            .font(.title3)
                             .lineLimit(1)
 
                         if room.isInvited {
                             Text("Invite")
-                                .font(.caption2)
+                                .font(.caption)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(.blue.opacity(0.2))
@@ -35,11 +36,12 @@ struct RoomListView: View {
 
                         if room.isEncrypted {
                             Image(systemName: "shield.lefthalf.filled")
-                                .font(.caption2)
+                                .font(.callout)
                                 .foregroundStyle(.green)
                                 .help("Encrypted")
                         }
                     }
+                    .padding(.vertical, 2)
                     .tag(room.id)
                 }
             }
@@ -49,12 +51,12 @@ struct RoomListView: View {
             Divider()
                 .opacity(0.3)
 
-            HStack(spacing: 12) {
+            HStack(spacing: 16) {
                 Button {
                     showCreateRoom = true
                 } label: {
                     Image(systemName: "plus")
-                        .font(.caption)
+                        .font(.body)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -64,7 +66,7 @@ struct RoomListView: View {
                     showExploreRooms = true
                 } label: {
                     Image(systemName: "globe")
-                        .font(.caption)
+                        .font(.body)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -74,7 +76,7 @@ struct RoomListView: View {
                     Task { await appState.refreshRooms() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                        .font(.caption)
+                        .font(.body)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -85,14 +87,14 @@ struct RoomListView: View {
                     Task { await appState.logout() }
                 } label: {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.caption)
+                        .font(.body)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Logout")
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
         }
         .sheet(isPresented: $showCreateRoom) {
             CreateRoomView()
