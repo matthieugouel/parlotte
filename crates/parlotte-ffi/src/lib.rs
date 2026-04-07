@@ -95,6 +95,8 @@ pub struct MessageInfo {
     pub event_id: String,
     pub sender: String,
     pub body: String,
+    pub formatted_body: Option<String>,
+    pub message_type: String,
     pub timestamp_ms: u64,
     pub is_edited: bool,
 }
@@ -105,6 +107,8 @@ impl From<CoreMessageInfo> for MessageInfo {
             event_id: m.event_id,
             sender: m.sender,
             body: m.body,
+            formatted_body: m.formatted_body,
+            message_type: m.message_type,
             timestamp_ms: m.timestamp_ms,
             is_edited: m.is_edited,
         }

@@ -355,12 +355,12 @@ impl ParlotteClient {
                 message: format!("failed to fetch messages: {e}"),
             })?;
 
-            use matrix_sdk::ruma::events::room::message::{MessageType, Relation};
+            use matrix_sdk::ruma::events::room::message::Relation;
             use std::collections::HashMap;
 
             let mut messages = Vec::new();
-            // Track edits: original_event_id -> new body
-            let mut edits: HashMap<String, String> = HashMap::new();
+            // Track edits: original_event_id -> (new body, new formatted_body)
+            let mut edits: HashMap<String, (String, Option<String>)> = HashMap::new();
 
             for event in response.chunk {
                 let raw = event.raw();
@@ -380,24 +380,23 @@ impl ParlotteClient {
 
                     // Check if this is an edit (replacement) event
                     if let Some(Relation::Replacement(replacement)) = &original.content.relates_to {
-                        if let MessageType::Text(text) = &replacement.new_content.msgtype {
-                            edits.insert(
-                                replacement.event_id.to_string(),
-                                text.body.clone(),
-                            );
-                        }
+                        let (body, formatted) = extract_body_and_formatted(&replacement.new_content.msgtype);
+                        edits.insert(
+                            replacement.event_id.to_string(),
+                            (body, formatted),
+                        );
                         continue;
                     }
 
-                    let body = match &original.content.msgtype {
-                        MessageType::Text(text) => text.body.clone(),
-                        _ => continue,
-                    };
+                    let (body, formatted_body) = extract_body_and_formatted(&original.content.msgtype);
+                    let message_type = message_type_str(&original.content.msgtype).to_owned();
 
                     messages.push(MessageInfo {
                         event_id: original.event_id.to_string(),
                         sender: original.sender.to_string(),
                         body,
+                        formatted_body,
+                        message_type,
                         timestamp_ms: original.origin_server_ts.0.into(),
                         is_edited: false,
                     });
@@ -406,8 +405,9 @@ impl ParlotteClient {
 
             // Apply edits to original messages
             for msg in &mut messages {
-                if let Some(new_body) = edits.remove(&msg.event_id) {
+                if let Some((new_body, new_formatted)) = edits.remove(&msg.event_id) {
                     msg.body = new_body;
+                    msg.formatted_body = new_formatted;
                     msg.is_edited = true;
                 }
             }
@@ -753,6 +753,63 @@ impl ParlotteClient {
                 })
                 .collect())
         })
+    }
+}
+
+/// Extract the plain-text body and optional HTML formatted body from a message type.
+fn extract_body_and_formatted(
+    msgtype: &matrix_sdk::ruma::events::room::message::MessageType,
+) -> (String, Option<String>) {
+    use matrix_sdk::ruma::events::room::message::MessageType;
+
+    match msgtype {
+        MessageType::Text(text) => {
+            let formatted = text
+                .formatted
+                .as_ref()
+                .filter(|f| f.format == matrix_sdk::ruma::events::room::message::MessageFormat::Html)
+                .map(|f| f.body.clone());
+            (text.body.clone(), formatted)
+        }
+        MessageType::Notice(notice) => {
+            let formatted = notice
+                .formatted
+                .as_ref()
+                .filter(|f| f.format == matrix_sdk::ruma::events::room::message::MessageFormat::Html)
+                .map(|f| f.body.clone());
+            (notice.body.clone(), formatted)
+        }
+        MessageType::Emote(emote) => {
+            let formatted = emote
+                .formatted
+                .as_ref()
+                .filter(|f| f.format == matrix_sdk::ruma::events::room::message::MessageFormat::Html)
+                .map(|f| f.body.clone());
+            (emote.body.clone(), formatted)
+        }
+        MessageType::Image(img) => (img.body.clone(), None),
+        MessageType::File(file) => (file.body.clone(), None),
+        MessageType::Video(video) => (video.body.clone(), None),
+        MessageType::Audio(audio) => (audio.body.clone(), None),
+        MessageType::Location(loc) => (loc.body.clone(), None),
+        _ => ("[unsupported message]".to_owned(), None),
+    }
+}
+
+/// Return a short string label for the message type.
+fn message_type_str(msgtype: &matrix_sdk::ruma::events::room::message::MessageType) -> &'static str {
+    use matrix_sdk::ruma::events::room::message::MessageType;
+
+    match msgtype {
+        MessageType::Text(_) => "text",
+        MessageType::Notice(_) => "notice",
+        MessageType::Emote(_) => "emote",
+        MessageType::Image(_) => "image",
+        MessageType::File(_) => "file",
+        MessageType::Video(_) => "video",
+        MessageType::Audio(_) => "audio",
+        MessageType::Location(_) => "location",
+        _ => "unknown",
     }
 }
 

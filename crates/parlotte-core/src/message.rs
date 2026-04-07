@@ -5,8 +5,12 @@ pub struct MessageInfo {
     pub event_id: String,
     /// The sender's Matrix user ID.
     pub sender: String,
-    /// The text body of the message.
+    /// The text body of the message (plain text fallback).
     pub body: String,
+    /// HTML-formatted body, if the sender provided one.
+    pub formatted_body: Option<String>,
+    /// The message type (e.g. "text", "image", "file", "video", "audio", "notice", "emote").
+    pub message_type: String,
     /// Unix timestamp in milliseconds when the message was sent (origin server ts).
     pub timestamp_ms: u64,
     /// Whether this message has been edited.
@@ -63,12 +67,16 @@ mod tests {
             event_id: "$event1:example.com".into(),
             sender: "@alice:example.com".into(),
             body: "Hello!".into(),
+            formatted_body: Some("<b>Hello!</b>".into()),
+            message_type: "text".into(),
             timestamp_ms: 1700000000000,
             is_edited: false,
         };
         assert_eq!(msg.event_id, "$event1:example.com");
         assert_eq!(msg.sender, "@alice:example.com");
         assert_eq!(msg.body, "Hello!");
+        assert_eq!(msg.formatted_body.as_deref(), Some("<b>Hello!</b>"));
+        assert_eq!(msg.message_type, "text");
         assert_eq!(msg.timestamp_ms, 1700000000000);
     }
 
@@ -78,6 +86,8 @@ mod tests {
             event_id: "$e:x.com".into(),
             sender: "@a:x.com".into(),
             body: "hi".into(),
+            formatted_body: None,
+            message_type: "text".into(),
             timestamp_ms: 0,
             is_edited: false,
         };

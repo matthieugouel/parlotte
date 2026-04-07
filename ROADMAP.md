@@ -32,8 +32,10 @@
 - [x] Message deletion
 - [ ] Reply to messages
 - [ ] Typing indicators
-- [ ] Media messages (images, files)
-- [ ] Markdown / rich text rendering
+- [x] Rich text rendering (HTML formatted messages)
+- [x] Non-text message indicators (image, file, video, audio, location)
+- [ ] Media messages (display images, download files)
+- [ ] Media upload (send images, files)
 
 ## UX
 - [x] Unread indicators / notification badges

@@ -301,7 +301,7 @@ struct MessageBubble: View {
                     .controlSize(.small)
                 }
             } else {
-                Text(message.body)
+                messageContent
                     .font(.title3)
                     .textSelection(.enabled)
             }
@@ -327,6 +327,54 @@ struct MessageBubble: View {
         } message: {
             Text("Are you sure you want to delete this message?")
         }
+    }
+
+    @ViewBuilder
+    private var messageContent: some View {
+        switch message.messageType {
+        case "image":
+            Label(message.body, systemImage: "photo")
+                .foregroundStyle(.secondary)
+        case "file":
+            Label(message.body, systemImage: "doc")
+                .foregroundStyle(.secondary)
+        case "video":
+            Label(message.body, systemImage: "film")
+                .foregroundStyle(.secondary)
+        case "audio":
+            Label(message.body, systemImage: "waveform")
+                .foregroundStyle(.secondary)
+        case "location":
+            Label(message.body, systemImage: "location")
+                .foregroundStyle(.secondary)
+        case "emote":
+            if let attributed = formattedAttributedString {
+                Text("* \(senderName) ") + Text(attributed)
+            } else {
+                Text("* \(senderName) \(message.body)")
+                    .italic()
+            }
+        default:
+            if let attributed = formattedAttributedString {
+                Text(attributed)
+            } else {
+                Text(message.body)
+            }
+        }
+    }
+
+    private var formattedAttributedString: AttributedString? {
+        guard let html = message.formattedBody else { return nil }
+        // Wrap in a basic HTML document so NSAttributedString parses it correctly
+        let wrapped = "<html><body style=\"font-family: -apple-system; font-size: 16px;\">\(html)</body></html>"
+        guard let data = wrapped.data(using: .utf8),
+              let nsAttr = try? NSAttributedString(
+                  data: data,
+                  options: [.documentType: NSAttributedString.DocumentType.html,
+                            .characterEncoding: String.Encoding.utf8.rawValue],
+                  documentAttributes: nil
+              ) else { return nil }
+        return try? AttributedString(nsAttr, including: \.swiftUI)
     }
 
     private var formattedTime: String {
