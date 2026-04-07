@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ParlotteSDK
 
@@ -35,10 +36,82 @@ final class AppState {
     var username = ""
     var password = ""
 
+    // SSO state
+    var ssoProviders: [SsoProvider] = []
+    var supportsPassword = true
+    var supportsSso = false
+    var isDetectingLoginMethods = false
+
     private var client: MatrixClient?
 
     init(profile: String = "default") {
         self.profile = profile
+    }
+
+    func detectLoginMethods() async {
+        isDetectingLoginMethods = true
+        errorMessage = nil
+
+        do {
+            let storePath = storePath()
+            let client = try MatrixClient(homeserverURL: homeserverURL, storePath: storePath)
+            let methods = try await client.loginMethods()
+            supportsPassword = methods.supportsPassword
+            supportsSso = methods.supportsSso
+            ssoProviders = methods.ssoProviders
+            // Keep client around for SSO flow
+            self.client = client
+        } catch {
+            supportsPassword = true
+            supportsSso = false
+            ssoProviders = []
+        }
+
+        isDetectingLoginMethods = false
+    }
+
+    func loginWithSso(idpId: String? = nil) async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            if client == nil {
+                let storePath = storePath()
+                clearStore()
+                client = try MatrixClient(homeserverURL: homeserverURL, storePath: storePath)
+            }
+            guard let client else { return }
+
+            // Start a local HTTP server to receive the SSO callback
+            let server = SsoCallbackServer()
+            let port = try await server.start()
+            let redirectUrl = "http://localhost:\(port)"
+
+            let ssoUrl = try await client.ssoLoginUrl(redirectUrl: redirectUrl, idpId: idpId)
+
+            // Open SSO URL in system browser
+            if let url = URL(string: ssoUrl) {
+                NSWorkspace.shared.open(url)
+            }
+
+            // Wait for the browser to redirect back with the login token
+            let callbackUrl = try await server.waitForCallback()
+
+            let session = try await client.loginSsoCallback(callbackUrl: callbackUrl)
+            let sessionData = await client.session()
+            saveSession(sessionData, homeserverURL: homeserverURL)
+            self.loggedInUserId = session.userId
+            password = ""
+            isLoggedIn = true
+            isSyncActive = true
+            try await client.syncOnce()
+            await refreshRooms()
+            startSyncLoop()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        isLoading = false
     }
 
     func login() async {

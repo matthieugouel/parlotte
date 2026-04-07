@@ -9,6 +9,7 @@ matrix-sdk = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+url = "2"
 
 [dev-dependencies]
 matrix-sdk = { workspace = true, features = ["testing"] }

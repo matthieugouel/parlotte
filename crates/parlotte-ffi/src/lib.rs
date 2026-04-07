@@ -16,10 +16,11 @@ pub fn init_logging(level: String) {
 }
 
 use parlotte_core::{
-    MatrixSessionData as CoreMatrixSessionData, MessageInfo as CoreMessageInfo,
-    ParlotteClient as CoreClient, ParlotteError as CoreError,
+    LoginMethods as CoreLoginMethods, MatrixSessionData as CoreMatrixSessionData,
+    MessageInfo as CoreMessageInfo, ParlotteClient as CoreClient, ParlotteError as CoreError,
     PublicRoomInfo as CorePublicRoomInfo, RoomInfo as CoreRoomInfo,
     RoomMemberInfo as CoreRoomMemberInfo, SessionInfo as CoreSessionInfo,
+    SsoProvider as CoreSsoProvider,
 };
 use std::fmt;
 use std::sync::Arc;
@@ -192,6 +193,38 @@ impl From<CoreRoomMemberInfo> for RoomMemberInfo {
     }
 }
 
+#[derive(uniffi::Record)]
+pub struct SsoProvider {
+    pub id: String,
+    pub name: String,
+}
+
+impl From<CoreSsoProvider> for SsoProvider {
+    fn from(p: CoreSsoProvider) -> Self {
+        Self {
+            id: p.id,
+            name: p.name,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct LoginMethods {
+    pub supports_password: bool,
+    pub supports_sso: bool,
+    pub sso_providers: Vec<SsoProvider>,
+}
+
+impl From<CoreLoginMethods> for LoginMethods {
+    fn from(m: CoreLoginMethods) -> Self {
+        Self {
+            supports_password: m.supports_password,
+            supports_sso: m.supports_sso,
+            sso_providers: m.sso_providers.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
 // -- Callback interfaces --
 
 /// Callback for persistent sync updates.
@@ -297,6 +330,18 @@ impl ParlotteClientFFI {
 
     pub fn redact_message(&self, room_id: String, event_id: String) -> Result<(), ParlotteError> {
         Ok(self.inner.redact_message(&room_id, &event_id)?)
+    }
+
+    pub fn login_methods(&self) -> Result<LoginMethods, ParlotteError> {
+        Ok(self.inner.login_methods()?.into())
+    }
+
+    pub fn sso_login_url(&self, redirect_url: String, idp_id: Option<String>) -> Result<String, ParlotteError> {
+        Ok(self.inner.sso_login_url(&redirect_url, idp_id.as_deref())?)
+    }
+
+    pub fn login_sso_callback(&self, callback_url: String) -> Result<SessionInfo, ParlotteError> {
+        Ok(self.inner.login_sso_callback(&callback_url)?.into())
     }
 
     pub fn start_sync(&self, listener: Box<dyn ParlotteSyncListener>) -> Result<(), ParlotteError> {

@@ -13,6 +13,26 @@ pub struct MessageInfo {
     pub is_edited: bool,
 }
 
+/// An SSO identity provider offered by the homeserver.
+#[derive(Debug, Clone)]
+pub struct SsoProvider {
+    /// The provider's unique ID.
+    pub id: String,
+    /// Human-readable name for the provider.
+    pub name: String,
+}
+
+/// Login methods supported by the homeserver.
+#[derive(Debug, Clone)]
+pub struct LoginMethods {
+    /// Whether username/password login is supported.
+    pub supports_password: bool,
+    /// Whether SSO login is supported.
+    pub supports_sso: bool,
+    /// Available SSO identity providers (empty if SSO is not supported).
+    pub sso_providers: Vec<SsoProvider>,
+}
+
 /// Information about the current session.
 #[derive(Debug, Clone)]
 pub struct SessionInfo {

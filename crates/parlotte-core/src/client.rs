@@ -8,7 +8,7 @@ use matrix_sdk::{Client, SessionMeta, SessionTokens};
 use std::sync::Arc;
 
 use crate::error::{ParlotteError, Result};
-use crate::message::{MatrixSessionData, MessageInfo, SessionInfo};
+use crate::message::{LoginMethods, MatrixSessionData, MessageInfo, SessionInfo, SsoProvider};
 use crate::room::{PublicRoomInfo, RoomInfo, RoomMemberInfo};
 use crate::sync::{SyncListener, SyncManager};
 
@@ -51,6 +51,102 @@ impl ParlotteClient {
             inner: Some(client),
             runtime,
             sync_manager: SyncManager::new(),
+        })
+    }
+
+    /// Query the homeserver for supported login methods.
+    pub fn login_methods(&self) -> Result<LoginMethods> {
+        use matrix_sdk::ruma::api::client::session::get_login_types::v3::LoginType;
+
+        let client = self.client();
+        self.runtime.block_on(async {
+            let response = client
+                .matrix_auth()
+                .get_login_types()
+                .await
+                .map_err(|e| ParlotteError::Auth {
+                    message: format!("failed to get login types: {e}"),
+                })?;
+
+            let mut supports_password = false;
+            let mut supports_sso = false;
+            let mut sso_providers = Vec::new();
+
+            for flow in &response.flows {
+                match flow {
+                    LoginType::Password(_) => supports_password = true,
+                    LoginType::Sso(sso) => {
+                        supports_sso = true;
+                        for idp in &sso.identity_providers {
+                            sso_providers.push(SsoProvider {
+                                id: idp.id.clone(),
+                                name: idp.name.clone(),
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            Ok(LoginMethods {
+                supports_password,
+                supports_sso,
+                sso_providers,
+            })
+        })
+    }
+
+    /// Get the URL to redirect the user to for SSO login.
+    /// After authentication, the homeserver redirects to `redirect_url` with a `loginToken` parameter.
+    pub fn sso_login_url(&self, redirect_url: &str, idp_id: Option<&str>) -> Result<String> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            client
+                .matrix_auth()
+                .get_sso_login_url(redirect_url, idp_id)
+                .await
+                .map_err(|e| ParlotteError::Auth {
+                    message: format!("failed to get SSO login URL: {e}"),
+                })
+        })
+    }
+
+    /// Complete SSO login using the callback URL containing the loginToken.
+    pub fn login_sso_callback(&self, callback_url: &str) -> Result<SessionInfo> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            let url = url::Url::parse(callback_url)
+                .map_err(|e| ParlotteError::Auth {
+                    message: format!("invalid callback URL: {e}"),
+                })?;
+
+            client
+                .matrix_auth()
+                .login_with_sso_callback(url)
+                .map_err(|e| ParlotteError::Auth {
+                    message: format!("SSO callback failed: {e}"),
+                })?
+                .initial_device_display_name("Parlotte")
+                .await
+                .map_err(|e| ParlotteError::Auth {
+                    message: format!("SSO login failed: {e}"),
+                })?;
+
+            let user_id = client
+                .user_id()
+                .ok_or_else(|| ParlotteError::Auth {
+                    message: "no user_id after SSO login".to_string(),
+                })?
+                .to_string();
+
+            let device_id = client
+                .device_id()
+                .ok_or_else(|| ParlotteError::Auth {
+                    message: "no device_id after SSO login".to_string(),
+                })?
+                .to_string();
+
+            Ok(SessionInfo { user_id, device_id })
         })
     }
 
@@ -846,6 +942,30 @@ mod tests {
         let result = client.redact_message("!room:example.com", "$event:example.com");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn sso_login_url_rejects_invalid_redirect() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        // This will fail because the server isn't reachable, not because of validation
+        let result = client.sso_login_url("http://localhost:9999/callback", None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn login_sso_callback_rejects_invalid_url() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.login_sso_callback("not-a-url");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ParlotteError::Auth { .. }));
+    }
+
+    #[test]
+    fn login_sso_callback_rejects_missing_token() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.login_sso_callback("http://localhost:9999/callback?notoken=here");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ParlotteError::Auth { .. }));
     }
 
     #[test]

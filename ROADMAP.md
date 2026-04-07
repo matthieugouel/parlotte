@@ -42,6 +42,7 @@
 - [ ] Search (messages, rooms)
 
 ## Security
-- [ ] OAuth / SSO login
+- [x] Legacy SSO login (browser-based, works with most Synapse servers)
+- [ ] Native OIDC login (MAS / OpenID Connect)
 - [ ] Device verification (cross-signing)
 - [ ] Key backup and recovery

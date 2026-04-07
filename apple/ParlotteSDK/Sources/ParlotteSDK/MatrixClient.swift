@@ -126,6 +126,27 @@ public actor MatrixClient {
         }.value
     }
 
+    public func loginMethods() async throws -> LoginMethods {
+        let ffi = self.ffi
+        return try await Task.detached {
+            try ffi.loginMethods()
+        }.value
+    }
+
+    public func ssoLoginUrl(redirectUrl: String, idpId: String? = nil) async throws -> String {
+        let ffi = self.ffi
+        return try await Task.detached {
+            try ffi.ssoLoginUrl(redirectUrl: redirectUrl, idpId: idpId)
+        }.value
+    }
+
+    public func loginSsoCallback(callbackUrl: String) async throws -> SessionInfo {
+        let ffi = self.ffi
+        return try await Task.detached {
+            try ffi.loginSsoCallback(callbackUrl: callbackUrl)
+        }.value
+    }
+
     public nonisolated func startSync(listener: ParlotteSyncListener) throws {
         try ffi.startSync(listener: listener)
     }
