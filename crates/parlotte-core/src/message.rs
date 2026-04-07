@@ -9,6 +9,8 @@ pub struct MessageInfo {
     pub body: String,
     /// Unix timestamp in milliseconds when the message was sent (origin server ts).
     pub timestamp_ms: u64,
+    /// Whether this message has been edited.
+    pub is_edited: bool,
 }
 
 /// Information about the current session.
@@ -42,6 +44,7 @@ mod tests {
             sender: "@alice:example.com".into(),
             body: "Hello!".into(),
             timestamp_ms: 1700000000000,
+            is_edited: false,
         };
         assert_eq!(msg.event_id, "$event1:example.com");
         assert_eq!(msg.sender, "@alice:example.com");
@@ -56,6 +59,7 @@ mod tests {
             sender: "@a:x.com".into(),
             body: "hi".into(),
             timestamp_ms: 0,
+            is_edited: false,
         };
         let cloned = msg.clone();
         assert_eq!(msg.body, cloned.body);

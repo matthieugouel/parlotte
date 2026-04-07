@@ -27,8 +27,9 @@
 ## Messaging
 - [x] Send and receive text messages
 - [x] Message history
-- [ ] Message editing
-- [ ] Message deletion
+- [ ] Message pagination (load older messages on scroll)
+- [x] Message editing
+- [x] Message deletion
 - [ ] Reply to messages
 - [ ] Typing indicators
 - [ ] Media messages (images, files)

@@ -56,6 +56,7 @@ final class AppState {
             self.loggedInUserId = session?.userId
             password = ""
             isLoggedIn = true
+            isSyncActive = true
             try await client.syncOnce()
             await refreshRooms()
             startSyncLoop()
@@ -85,6 +86,7 @@ final class AppState {
             self.loggedInUserId = saved.userId
             await refreshRooms()
             isLoggedIn = true
+            isSyncActive = true
             isCheckingSession = false
             try await client.syncOnce()
             await refreshRooms()
@@ -194,6 +196,24 @@ final class AppState {
             if selectedRoomId == roomId {
                 selectedRoomId = nil
             }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func editMessage(eventId: String, newBody: String) async {
+        guard let client, let roomId = selectedRoomId else { return }
+        do {
+            try await client.editMessage(roomId: roomId, eventId: eventId, newBody: newBody)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func deleteMessage(eventId: String) async {
+        guard let client, let roomId = selectedRoomId else { return }
+        do {
+            try await client.redactMessage(roomId: roomId, eventId: eventId)
         } catch {
             errorMessage = error.localizedDescription
         }

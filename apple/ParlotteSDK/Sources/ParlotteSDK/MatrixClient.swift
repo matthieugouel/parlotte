@@ -98,6 +98,20 @@ public actor MatrixClient {
         }.value
     }
 
+    public func editMessage(roomId: String, eventId: String, newBody: String) async throws {
+        let ffi = self.ffi
+        try await Task.detached {
+            try ffi.editMessage(roomId: roomId, eventId: eventId, newBody: newBody)
+        }.value
+    }
+
+    public func redactMessage(roomId: String, eventId: String) async throws {
+        let ffi = self.ffi
+        try await Task.detached {
+            try ffi.redactMessage(roomId: roomId, eventId: eventId)
+        }.value
+    }
+
     public func sendReadReceipt(roomId: String, eventId: String) async throws {
         let ffi = self.ffi
         try await Task.detached {

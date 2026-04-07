@@ -419,6 +419,58 @@ mod tests {
         let _ = std::fs::remove_dir_all(&bob_store);
     }
 
+    // -- Test: Message editing --
+
+    #[test]
+    fn edit_message() {
+        require_synapse();
+        let (alice, _) = register_and_login("edit_alice");
+
+        let room_id = alice.create_room("Edit Test", false).unwrap();
+        alice.sync_once().unwrap();
+
+        alice.send_message(&room_id, "Original message").unwrap();
+        alice.sync_once().unwrap();
+
+        let msgs = alice.messages(&room_id, 50).unwrap();
+        let event_id = &msgs.iter().find(|m| m.body == "Original message").unwrap().event_id;
+
+        alice.edit_message(&room_id, event_id, "Edited message").unwrap();
+        alice.sync_once().unwrap();
+
+        let msgs = alice.messages(&room_id, 50).unwrap();
+        let edited = msgs.iter().find(|m| m.event_id == *event_id).unwrap();
+        assert_eq!(edited.body, "Edited message");
+        assert!(edited.is_edited, "Message should be marked as edited");
+    }
+
+    // -- Test: Message deletion (redaction) --
+
+    #[test]
+    fn redact_message() {
+        require_synapse();
+        let (alice, _) = register_and_login("redact_alice");
+
+        let room_id = alice.create_room("Redact Test", false).unwrap();
+        alice.sync_once().unwrap();
+
+        alice.send_message(&room_id, "Delete me").unwrap();
+        alice.sync_once().unwrap();
+
+        let msgs = alice.messages(&room_id, 50).unwrap();
+        assert!(msgs.iter().any(|m| m.body == "Delete me"));
+        let event_id = &msgs.iter().find(|m| m.body == "Delete me").unwrap().event_id;
+
+        alice.redact_message(&room_id, event_id).unwrap();
+        alice.sync_once().unwrap();
+
+        let msgs = alice.messages(&room_id, 50).unwrap();
+        assert!(
+            !msgs.iter().any(|m| m.body == "Delete me"),
+            "Redacted message should not appear"
+        );
+    }
+
     // -- Test: Unread count and read receipts --
 
     #[test]

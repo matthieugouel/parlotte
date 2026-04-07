@@ -252,13 +252,20 @@ impl ParlotteClient {
                     message: format!("room {room_id} not found"),
                 })?;
 
-            let options = MessagesOptions::backward();
+            let mut options = MessagesOptions::backward();
+            options.limit = matrix_sdk::ruma::UInt::new(limit).unwrap_or(matrix_sdk::ruma::UInt::MAX);
 
             let response = room.messages(options).await.map_err(|e| ParlotteError::Room {
                 message: format!("failed to fetch messages: {e}"),
             })?;
 
+            use matrix_sdk::ruma::events::room::message::{MessageType, Relation};
+            use std::collections::HashMap;
+
             let mut messages = Vec::new();
+            // Track edits: original_event_id -> new body
+            let mut edits: HashMap<String, String> = HashMap::new();
+
             for event in response.chunk {
                 let raw = event.raw();
                 let Ok(deserialized) = raw.deserialize() else {
@@ -271,13 +278,23 @@ impl ParlotteClient {
                 {
                     let original = match msg {
                         matrix_sdk::ruma::events::SyncMessageLikeEvent::Original(o) => o,
+                        // Redacted events are skipped
                         _ => continue,
                     };
 
-                    let body = match original.content.msgtype {
-                        matrix_sdk::ruma::events::room::message::MessageType::Text(text) => {
-                            text.body
+                    // Check if this is an edit (replacement) event
+                    if let Some(Relation::Replacement(replacement)) = &original.content.relates_to {
+                        if let MessageType::Text(text) = &replacement.new_content.msgtype {
+                            edits.insert(
+                                replacement.event_id.to_string(),
+                                text.body.clone(),
+                            );
                         }
+                        continue;
+                    }
+
+                    let body = match &original.content.msgtype {
+                        MessageType::Text(text) => text.body.clone(),
                         _ => continue,
                     };
 
@@ -286,17 +303,93 @@ impl ParlotteClient {
                         sender: original.sender.to_string(),
                         body,
                         timestamp_ms: original.origin_server_ts.0.into(),
+                        is_edited: false,
                     });
+                }
+            }
 
-                    if messages.len() >= limit as usize {
-                        break;
-                    }
+            // Apply edits to original messages
+            for msg in &mut messages {
+                if let Some(new_body) = edits.remove(&msg.event_id) {
+                    msg.body = new_body;
+                    msg.is_edited = true;
                 }
             }
 
             // Reverse so oldest is first, newest last
             messages.reverse();
             Ok(messages)
+        })
+    }
+
+    /// Edit an existing message. Only the sender can edit their own messages.
+    pub fn edit_message(&self, room_id: &str, event_id: &str, new_body: &str) -> Result<()> {
+        use matrix_sdk::room::edit::EditedContent;
+        use matrix_sdk::ruma::events::room::message::RoomMessageEventContentWithoutRelation;
+        use matrix_sdk::ruma::EventId;
+
+        let client = self.client();
+        self.runtime.block_on(async {
+            let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid room ID: {e}"),
+            })?;
+
+            let room = client
+                .get_room(room_id)
+                .ok_or_else(|| ParlotteError::Room {
+                    message: format!("room {room_id} not found"),
+                })?;
+
+            let event_id = <&EventId>::try_from(event_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid event ID: {e}"),
+            })?;
+
+            let new_content = RoomMessageEventContentWithoutRelation::text_plain(new_body);
+            let edit_content = room
+                .make_edit_event(event_id, EditedContent::RoomMessage(new_content))
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to create edit: {e}"),
+                })?;
+
+            room.send(edit_content)
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to send edit: {e}"),
+                })?;
+
+            Ok(())
+        })
+    }
+
+    /// Redact (delete) a message. Users can redact their own messages, and
+    /// moderators/admins can redact anyone's messages.
+    pub fn redact_message(&self, room_id: &str, event_id: &str) -> Result<()> {
+        use matrix_sdk::ruma::EventId;
+
+        let client = self.client();
+        self.runtime.block_on(async {
+            let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid room ID: {e}"),
+            })?;
+
+            let room = client
+                .get_room(room_id)
+                .ok_or_else(|| ParlotteError::Room {
+                    message: format!("room {room_id} not found"),
+                })?;
+
+            let event_id = <&EventId>::try_from(event_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid event ID: {e}"),
+            })?;
+
+            room.redact(event_id, None, None)
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to redact message: {e}"),
+                })?;
+
+            Ok(())
         })
     }
 
@@ -721,6 +814,38 @@ mod tests {
         let err = result.unwrap_err();
         assert!(matches!(err, ParlotteError::Room { .. }));
         assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn edit_message_rejects_invalid_room_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.edit_message("garbage", "$event:example.com", "new body");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
+    }
+
+    #[test]
+    fn edit_message_rejects_nonexistent_room() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.edit_message("!room:example.com", "$event:example.com", "new body");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn redact_message_rejects_invalid_room_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.redact_message("garbage", "$event:example.com");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
+    }
+
+    #[test]
+    fn redact_message_rejects_nonexistent_room() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.redact_message("!room:example.com", "$event:example.com");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
     }
 
     #[test]

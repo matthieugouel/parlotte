@@ -95,6 +95,7 @@ pub struct MessageInfo {
     pub sender: String,
     pub body: String,
     pub timestamp_ms: u64,
+    pub is_edited: bool,
 }
 
 impl From<CoreMessageInfo> for MessageInfo {
@@ -104,6 +105,7 @@ impl From<CoreMessageInfo> for MessageInfo {
             sender: m.sender,
             body: m.body,
             timestamp_ms: m.timestamp_ms,
+            is_edited: m.is_edited,
         }
     }
 }
@@ -287,6 +289,14 @@ impl ParlotteClientFFI {
 
     pub fn send_read_receipt(&self, room_id: String, event_id: String) -> Result<(), ParlotteError> {
         Ok(self.inner.send_read_receipt(&room_id, &event_id)?)
+    }
+
+    pub fn edit_message(&self, room_id: String, event_id: String, new_body: String) -> Result<(), ParlotteError> {
+        Ok(self.inner.edit_message(&room_id, &event_id, &new_body)?)
+    }
+
+    pub fn redact_message(&self, room_id: String, event_id: String) -> Result<(), ParlotteError> {
+        Ok(self.inner.redact_message(&room_id, &event_id)?)
     }
 
     pub fn start_sync(&self, listener: Box<dyn ParlotteSyncListener>) -> Result<(), ParlotteError> {

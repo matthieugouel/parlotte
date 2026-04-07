@@ -122,8 +122,17 @@ struct RoomDetailView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(appState.messages, id: \.eventId) { message in
-                            MessageBubble(message: message)
-                                .id(message.eventId)
+                            MessageBubble(
+                                message: message,
+                                isOwnMessage: message.sender == appState.loggedInUserId,
+                                onEdit: { newBody in
+                                    Task { await appState.editMessage(eventId: message.eventId, newBody: newBody) }
+                                },
+                                onDelete: {
+                                    Task { await appState.deleteMessage(eventId: message.eventId) }
+                                }
+                            )
+                            .id(message.eventId)
                         }
                     }
                     .padding(.horizontal)
@@ -201,6 +210,14 @@ struct RoomDetailView: View {
 
 struct MessageBubble: View {
     let message: MessageInfo
+    let isOwnMessage: Bool
+    let onEdit: (String) -> Void
+    let onDelete: () -> Void
+
+    @State private var isEditing = false
+    @State private var editText = ""
+    @State private var isHovered = false
+    @State private var showDeleteConfirm = false
 
     private var senderName: String {
         let userId = message.sender
@@ -221,13 +238,95 @@ struct MessageBubble: View {
                 Text(formattedTime)
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+
+                if message.isEdited {
+                    Text("(edited)")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+
+                Spacer()
+
+                if isOwnMessage && isHovered && !isEditing {
+                    HStack(spacing: 6) {
+                        Button {
+                            editText = message.body
+                            isEditing = true
+                        } label: {
+                            Image(systemName: "pencil")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Edit")
+
+                        Button {
+                            showDeleteConfirm = true
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete")
+                    }
+                    .transition(.opacity)
+                }
             }
 
-            Text(message.body)
-                .font(.title3)
-                .textSelection(.enabled)
+            if isEditing {
+                HStack(spacing: 8) {
+                    TextField("Edit message...", text: $editText, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.title3)
+                        .lineLimit(1...5)
+                        .onSubmit {
+                            let text = editText
+                            isEditing = false
+                            onEdit(text)
+                        }
+
+                    Button("Save") {
+                        let text = editText
+                        isEditing = false
+                        onEdit(text)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    Button("Cancel") {
+                        isEditing = false
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            } else {
+                Text(message.body)
+                    .font(.title3)
+                    .textSelection(.enabled)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 5)
+        .padding(.horizontal, 4)
+        .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isHovered ? Color.primary.opacity(0.04) : .clear)
+        )
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovered = hovering
+            }
+        }
+        .alert("Delete Message", isPresented: $showDeleteConfirm) {
+            Button("Delete", role: .destructive) {
+                onDelete()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Are you sure you want to delete this message?")
+        }
     }
 
     private var formattedTime: String {
