@@ -1,102 +1,101 @@
-/// Integration test helpers for parlotte-core.
+/// Integration tests for parlotte-core.
 /// These tests require a running Synapse server (see docker-compose.yml).
 ///
 /// Run with: cargo test -p parlotte-integration
 ///
 /// The tests use the Synapse registration API to create fresh users for each
 /// test, so they are fully isolated and can run in parallel.
-use parlotte_core::ParlotteClient;
-use serde::Deserialize;
-use std::sync::atomic::{AtomicU32, Ordering};
-
-const HOMESERVER_URL: &str = "http://localhost:8008";
-
-static USER_COUNTER: AtomicU32 = AtomicU32::new(0);
-
-/// Generate a unique username for each test to avoid conflicts.
-fn unique_username(prefix: &str) -> String {
-    let id = USER_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
-    format!("{prefix}_{id}_{ts}")
-}
-
-#[derive(Deserialize)]
-struct RegisterResponse {
-    user_id: String,
-}
-
-/// Register a user via Synapse's registration API and return a logged-in ParlotteClient.
-fn register_and_login(prefix: &str) -> (ParlotteClient, String) {
-    let username = unique_username(prefix);
-    let password = "test-password-123";
-
-    // Register via the Matrix client API (open registration is enabled)
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let user_id = rt.block_on(async {
-        let client = reqwest::Client::new();
-        let resp = client
-            .post(format!("{HOMESERVER_URL}/_matrix/client/v3/register"))
-            .json(&serde_json::json!({
-                "username": username,
-                "password": password,
-                "auth": {
-                    "type": "m.login.dummy"
-                }
-            }))
-            .send()
-            .await
-            .expect("failed to send registration request");
-
-        let status = resp.status();
-        let body = resp.text().await.unwrap();
-        assert!(
-            status.is_success(),
-            "registration failed ({status}): {body}"
-        );
-
-        let reg: RegisterResponse = serde_json::from_str(&body).unwrap();
-        reg.user_id
-    });
-    drop(rt);
-
-    // Now create a ParlotteClient and login
-    let client = ParlotteClient::new(HOMESERVER_URL, None)
-        .expect("failed to create parlotte client");
-    let session = client
-        .login(&username, password)
-        .expect("login failed after registration");
-
-    assert_eq!(session.user_id, user_id);
-    assert!(!session.device_id.is_empty());
-
-    (client, user_id)
-}
-
-/// Check if Synapse is reachable. Skips tests if not.
-fn require_synapse() {
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let reachable = rt.block_on(async {
-        reqwest::get(format!("{HOMESERVER_URL}/health"))
-            .await
-            .map(|r| r.status().is_success())
-            .unwrap_or(false)
-    });
-    drop(rt);
-
-    if !reachable {
-        panic!(
-            "Synapse not reachable at {HOMESERVER_URL}. \
-             Start it with: docker compose -f tests/integration/docker-compose.yml up -d"
-        );
-    }
-}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use parlotte_core::ParlotteClient;
+    use serde::Deserialize;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    const HOMESERVER_URL: &str = "http://localhost:8008";
+
+    static USER_COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    /// Generate a unique username for each test to avoid conflicts.
+    fn unique_username(prefix: &str) -> String {
+        let id = USER_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        format!("{prefix}_{id}_{ts}")
+    }
+
+    #[derive(Deserialize)]
+    struct RegisterResponse {
+        user_id: String,
+    }
+
+    /// Register a user via Synapse's registration API and return a logged-in ParlotteClient.
+    fn register_and_login(prefix: &str) -> (ParlotteClient, String) {
+        let username = unique_username(prefix);
+        let password = "test-password-123";
+
+        // Register via the Matrix client API (open registration is enabled)
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let user_id = rt.block_on(async {
+            let client = reqwest::Client::new();
+            let resp = client
+                .post(format!("{HOMESERVER_URL}/_matrix/client/v3/register"))
+                .json(&serde_json::json!({
+                    "username": username,
+                    "password": password,
+                    "auth": {
+                        "type": "m.login.dummy"
+                    }
+                }))
+                .send()
+                .await
+                .expect("failed to send registration request");
+
+            let status = resp.status();
+            let body = resp.text().await.unwrap();
+            assert!(
+                status.is_success(),
+                "registration failed ({status}): {body}"
+            );
+
+            let reg: RegisterResponse = serde_json::from_str(&body).unwrap();
+            reg.user_id
+        });
+        drop(rt);
+
+        // Now create a ParlotteClient and login
+        let client = ParlotteClient::new(HOMESERVER_URL, None)
+            .expect("failed to create parlotte client");
+        let session = client
+            .login(&username, password)
+            .expect("login failed after registration");
+
+        assert_eq!(session.user_id, user_id);
+        assert!(!session.device_id.is_empty());
+
+        (client, user_id)
+    }
+
+    /// Check if Synapse is reachable. Panics if not.
+    fn require_synapse() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let reachable = rt.block_on(async {
+            reqwest::get(format!("{HOMESERVER_URL}/health"))
+                .await
+                .map(|r| r.status().is_success())
+                .unwrap_or(false)
+        });
+        drop(rt);
+
+        if !reachable {
+            panic!(
+                "Synapse not reachable at {HOMESERVER_URL}. \
+                 Start it with: docker compose -f tests/integration/docker-compose.yml up -d"
+            );
+        }
+    }
 
     // -- Test: Login with valid credentials --
 
