@@ -100,6 +100,7 @@ pub struct MessageInfo {
     pub message_type: String,
     pub timestamp_ms: u64,
     pub is_edited: bool,
+    pub replied_to_event_id: Option<String>,
 }
 
 impl From<CoreMessageInfo> for MessageInfo {
@@ -112,6 +113,7 @@ impl From<CoreMessageInfo> for MessageInfo {
             message_type: m.message_type,
             timestamp_ms: m.timestamp_ms,
             is_edited: m.is_edited,
+            replied_to_event_id: m.replied_to_event_id,
         }
     }
 }
@@ -308,6 +310,10 @@ impl ParlotteClientFFI {
         Ok(self.inner.send_message(&room_id, &body)?)
     }
 
+    pub fn send_reply(&self, room_id: String, event_id: String, body: String) -> Result<(), ParlotteError> {
+        Ok(self.inner.send_reply(&room_id, &event_id, &body)?)
+    }
+
     pub fn messages(&self, room_id: String, limit: u64, from: Option<String>) -> Result<MessageBatch, ParlotteError> {
         Ok(self.inner.messages(&room_id, limit, from.as_deref())?.into())
     }
@@ -434,6 +440,7 @@ mod tests {
             message_type: "text".into(),
             timestamp_ms: 1700000000000,
             is_edited: true,
+            replied_to_event_id: Some("$parent:example.com".into()),
         };
         let ffi: MessageInfo = core.into();
         assert_eq!(ffi.event_id, "$evt:example.com");
@@ -443,6 +450,7 @@ mod tests {
         assert_eq!(ffi.message_type, "text");
         assert_eq!(ffi.timestamp_ms, 1700000000000);
         assert!(ffi.is_edited);
+        assert_eq!(ffi.replied_to_event_id.as_deref(), Some("$parent:example.com"));
     }
 
     #[test]
@@ -455,11 +463,13 @@ mod tests {
             message_type: "notice".into(),
             timestamp_ms: 0,
             is_edited: false,
+            replied_to_event_id: None,
         };
         let ffi: MessageInfo = core.into();
         assert!(ffi.formatted_body.is_none());
         assert_eq!(ffi.message_type, "notice");
         assert!(!ffi.is_edited);
+        assert!(ffi.replied_to_event_id.is_none());
     }
 
     // -- MessageBatch round-trip --
@@ -475,6 +485,7 @@ mod tests {
                 message_type: "text".into(),
                 timestamp_ms: 100,
                 is_edited: false,
+                replied_to_event_id: None,
             }],
             end_token: Some("t47_42_0_1".into()),
         };

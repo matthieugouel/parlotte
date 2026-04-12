@@ -15,6 +15,8 @@ pub struct MessageInfo {
     pub timestamp_ms: u64,
     /// Whether this message has been edited.
     pub is_edited: bool,
+    /// The event ID this message is replying to, if any.
+    pub replied_to_event_id: Option<String>,
 }
 
 /// A batch of messages with a pagination token for loading more.
@@ -80,6 +82,7 @@ mod tests {
             message_type: "text".into(),
             timestamp_ms: 1700000000000,
             is_edited: false,
+            replied_to_event_id: Some("$parent:example.com".into()),
         };
         assert_eq!(msg.event_id, "$event1:example.com");
         assert_eq!(msg.sender, "@alice:example.com");
@@ -87,6 +90,7 @@ mod tests {
         assert_eq!(msg.formatted_body.as_deref(), Some("<b>Hello!</b>"));
         assert_eq!(msg.message_type, "text");
         assert_eq!(msg.timestamp_ms, 1700000000000);
+        assert_eq!(msg.replied_to_event_id.as_deref(), Some("$parent:example.com"));
     }
 
     #[test]
@@ -99,6 +103,7 @@ mod tests {
             message_type: "text".into(),
             timestamp_ms: 0,
             is_edited: false,
+            replied_to_event_id: None,
         };
         let cloned = msg.clone();
         assert_eq!(msg.body, cloned.body);

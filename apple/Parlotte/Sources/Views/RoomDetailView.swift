@@ -8,6 +8,7 @@ struct RoomDetailView: View {
     @State private var inviteUserId = ""
     @State private var showLeaveConfirm = false
     @State private var showMembers = false
+    @State private var replyingTo: MessageInfo?
 
     private var selectedRoom: some View {
         let room = appState.rooms.first { $0.id == appState.selectedRoomId }
@@ -123,27 +124,63 @@ struct RoomDetailView: View {
             Divider()
 
             // Compose area
-            HStack(spacing: 10) {
-                TextField("Send a message...", text: $messageText, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.body)
-                    .lineLimit(1...5)
-                    .onSubmit {
-                        send()
-                    }
+            VStack(spacing: 0) {
+                if let reply = replyingTo {
+                    HStack(spacing: 8) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(.blue)
+                            .frame(width: 3, height: 28)
 
-                Button {
-                    send()
-                } label: {
-                    Image(systemName: "paperplane.fill")
-                        .font(.body)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(reply.sender)
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.blue)
+                            Text(reply.body)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+
+                        Spacer()
+
+                        Button {
+                            replyingTo = nil
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 6)
+                    .background(.bar)
+
+                    Divider()
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                HStack(spacing: 10) {
+                    TextField("Send a message...", text: $messageText, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.body)
+                        .lineLimit(1...5)
+                        .onSubmit {
+                            send()
+                        }
+
+                    Button {
+                        send()
+                    } label: {
+                        Image(systemName: "paperplane.fill")
+                            .font(.body)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 12)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 12)
         }
         .alert("Invite User", isPresented: $showInvite) {
             TextField("@user:server", text: $inviteUserId)
@@ -171,6 +208,9 @@ struct RoomDetailView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Are you sure you want to leave this room?")
+        }
+        .onChange(of: appState.selectedRoomId) {
+            replyingTo = nil
         }
     }
 
@@ -219,6 +259,12 @@ struct RoomDetailView: View {
                     MessageBubble(
                         message: message,
                         isOwnMessage: message.sender == appState.loggedInUserId,
+                        repliedMessage: message.repliedToEventId.flatMap { replyId in
+                            appState.messages.first { $0.eventId == replyId }
+                        },
+                        onReply: {
+                            replyingTo = message
+                        },
                         onEdit: { newBody in
                             Task { await appState.editMessage(eventId: message.eventId, newBody: newBody) }
                         },
@@ -235,14 +281,24 @@ struct RoomDetailView: View {
 
     private func send() {
         let body = messageText
+        let reply = replyingTo
         messageText = ""
-        Task { await appState.sendMessage(body: body) }
+        replyingTo = nil
+        Task {
+            if let reply {
+                await appState.sendReply(eventId: reply.eventId, body: body)
+            } else {
+                await appState.sendMessage(body: body)
+            }
+        }
     }
 }
 
 struct MessageBubble: View {
     let message: MessageInfo
     let isOwnMessage: Bool
+    let repliedMessage: MessageInfo?
+    let onReply: () -> Void
     let onEdit: (String) -> Void
     let onDelete: () -> Void
 
@@ -279,31 +335,63 @@ struct MessageBubble: View {
 
                 Spacer()
 
-                if isOwnMessage && isHovered && !isEditing {
+                if isHovered && !isEditing {
                     HStack(spacing: 6) {
                         Button {
-                            editText = message.body
-                            isEditing = true
+                            onReply()
                         } label: {
-                            Image(systemName: "pencil")
+                            Image(systemName: "arrowshape.turn.up.left")
                                 .font(.body)
                                 .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
-                        .help("Edit")
+                        .help("Reply")
 
-                        Button {
-                            showDeleteConfirm = true
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.body)
-                                .foregroundStyle(.secondary)
+                        if isOwnMessage {
+                            Button {
+                                editText = message.body
+                                isEditing = true
+                            } label: {
+                                Image(systemName: "pencil")
+                                    .font(.body)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Edit")
+
+                            Button {
+                                showDeleteConfirm = true
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.body)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Delete")
                         }
-                        .buttonStyle(.plain)
-                        .help("Delete")
                     }
                     .transition(.opacity)
                 }
+            }
+
+            if let replied = repliedMessage {
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(.blue.opacity(0.6))
+                        .frame(width: 3, height: 28)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(replied.sender)
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.blue)
+                        Text(replied.body)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .padding(.vertical, 2)
             }
 
             if isEditing {

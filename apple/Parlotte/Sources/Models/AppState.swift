@@ -233,12 +233,27 @@ final class AppState {
             let existingIds = Set(messages.map(\.eventId))
             let newMessages = batch.messages.filter { !existingIds.contains($0.eventId) }
             if !newMessages.isEmpty {
+                // Remove optimistic placeholders that the server has now confirmed
+                messages.removeAll { $0.eventId.hasPrefix("~optimistic:") }
                 messages.append(contentsOf: newMessages)
                 await sendReadReceiptForLatestMessage()
             }
         } catch {
             // Non-fatal
         }
+    }
+
+    private func makeOptimisticMessage(body: String) -> MessageInfo {
+        MessageInfo(
+            eventId: "~optimistic:\(UUID().uuidString)",
+            sender: loggedInUserId ?? "",
+            body: body,
+            formattedBody: nil,
+            messageType: "text",
+            timestampMs: UInt64(Date().timeIntervalSince1970 * 1000),
+            isEdited: false,
+            repliedToEventId: nil
+        )
     }
 
     func loadMoreMessages() async {
@@ -269,10 +284,13 @@ final class AppState {
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
+        let placeholder = makeOptimisticMessage(body: trimmed)
+        messages.append(placeholder)
+
         do {
             try await client.sendMessage(roomId: roomId, body: trimmed)
-            // Persistent sync will pick up the new message; no syncOnce needed
         } catch {
+            messages.removeAll { $0.eventId == placeholder.eventId }
             errorMessage = error.localizedDescription
         }
     }
@@ -327,20 +345,57 @@ final class AppState {
         }
     }
 
+    func sendReply(eventId: String, body: String) async {
+        guard let client, let roomId = selectedRoomId else { return }
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        var placeholder = makeOptimisticMessage(body: trimmed)
+        placeholder.repliedToEventId = eventId
+        messages.append(placeholder)
+
+        do {
+            try await client.sendReply(roomId: roomId, eventId: eventId, body: trimmed)
+        } catch {
+            messages.removeAll { $0.eventId == placeholder.eventId }
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func editMessage(eventId: String, newBody: String) async {
         guard let client, let roomId = selectedRoomId else { return }
+        guard let idx = messages.firstIndex(where: { $0.eventId == eventId }) else { return }
+
+        let oldBody = messages[idx].body
+        let oldFormatted = messages[idx].formattedBody
+        let wasEdited = messages[idx].isEdited
+
+        messages[idx].body = newBody
+        messages[idx].formattedBody = nil
+        messages[idx].isEdited = true
+
         do {
             try await client.editMessage(roomId: roomId, eventId: eventId, newBody: newBody)
         } catch {
+            if let idx = messages.firstIndex(where: { $0.eventId == eventId }) {
+                messages[idx].body = oldBody
+                messages[idx].formattedBody = oldFormatted
+                messages[idx].isEdited = wasEdited
+            }
             errorMessage = error.localizedDescription
         }
     }
 
     func deleteMessage(eventId: String) async {
         guard let client, let roomId = selectedRoomId else { return }
+        guard let idx = messages.firstIndex(where: { $0.eventId == eventId }) else { return }
+
+        let removed = messages.remove(at: idx)
+
         do {
             try await client.redactMessage(roomId: roomId, eventId: eventId)
         } catch {
+            messages.insert(removed, at: min(idx, messages.count))
             errorMessage = error.localizedDescription
         }
     }
@@ -461,8 +516,11 @@ private final class SyncUpdateHandler: ParlotteSyncListener, @unchecked Sendable
     func onSyncUpdate() {
         Task { @MainActor [weak appState] in
             guard let appState else { return }
-            let hasNew = await appState.refreshRooms()
-            if hasNew {
+            await appState.refreshRooms()
+            // Always check for new messages when a room is selected.
+            // Own messages don't increment unreadCount, so we can't gate
+            // on that — the dedup in appendNewMessages handles duplicates.
+            if appState.selectedRoomId != nil {
                 await appState.appendNewMessages()
             }
         }

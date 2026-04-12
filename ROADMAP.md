@@ -30,7 +30,7 @@
 - [x] Message pagination (load older messages on scroll)
 - [x] Message editing
 - [x] Message deletion
-- [ ] Reply to messages
+- [x] Reply to messages
 - [ ] Typing indicators
 - [x] Rich text rendering (HTML formatted messages)
 - [x] Non-text message indicators (image, file, video, audio, location)

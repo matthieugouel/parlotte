@@ -334,6 +334,52 @@ impl ParlotteClient {
         })
     }
 
+    /// Send a reply to a specific message in a room.
+    pub fn send_reply(&self, room_id: &str, event_id: &str, body: &str) -> Result<()> {
+        use matrix_sdk::room::reply::{EnforceThread, Reply};
+        use matrix_sdk::ruma::events::room::message::RoomMessageEventContentWithoutRelation;
+        use matrix_sdk::ruma::EventId;
+
+        let client = self.client();
+        self.runtime.block_on(async {
+            let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid room ID: {e}"),
+            })?;
+
+            let room = client
+                .get_room(room_id)
+                .ok_or_else(|| ParlotteError::Room {
+                    message: format!("room {room_id} not found"),
+                })?;
+
+            let event_id = <&EventId>::try_from(event_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid event ID: {e}"),
+            })?;
+
+            let content = RoomMessageEventContentWithoutRelation::text_plain(body);
+            let reply_content = room
+                .make_reply_event(
+                    content,
+                    Reply {
+                        event_id: event_id.to_owned(),
+                        enforce_thread: EnforceThread::Unthreaded,
+                    },
+                )
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to create reply: {e}"),
+                })?;
+
+            room.send(reply_content)
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to send reply: {e}"),
+                })?;
+
+            Ok(())
+        })
+    }
+
     /// Get recent messages from a room, most recent last.
     /// Pass `from` as `None` to fetch the latest messages, or provide a pagination
     /// token from a previous `MessageBatch::end_token` to load older history.
@@ -393,6 +439,13 @@ impl ParlotteClient {
                         continue;
                     }
 
+                    let replied_to_event_id = match &original.content.relates_to {
+                        Some(Relation::Reply { in_reply_to }) => {
+                            Some(in_reply_to.event_id.to_string())
+                        }
+                        _ => None,
+                    };
+
                     let (body, formatted_body) = extract_body_and_formatted(&original.content.msgtype);
                     let message_type = message_type_str(&original.content.msgtype).to_owned();
 
@@ -404,6 +457,7 @@ impl ParlotteClient {
                         message_type,
                         timestamp_ms: original.origin_server_ts.0.into(),
                         is_edited: false,
+                        replied_to_event_id,
                     });
                 }
             }
@@ -891,6 +945,26 @@ mod tests {
         let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
         // Valid format but room doesn't exist in client state
         let result = client.send_message("!nonexistent:example.com", "hello");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ParlotteError::Room { .. }));
+        assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn send_reply_rejects_invalid_room_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.send_reply("not-a-room-id", "$event:example.com", "reply");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ParlotteError::Room { .. }));
+        assert!(err.to_string().contains("invalid room ID"));
+    }
+
+    #[test]
+    fn send_reply_rejects_nonexistent_room() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.send_reply("!nonexistent:example.com", "$event:example.com", "reply");
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, ParlotteError::Room { .. }));
