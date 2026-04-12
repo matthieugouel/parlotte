@@ -14,6 +14,7 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var editMessageCalls: [(roomId: String, eventId: String, newBody: String)] = []
     var redactMessageCalls: [(roomId: String, eventId: String)] = []
     var sendReadReceiptCalls: [(roomId: String, eventId: String)] = []
+    var sendTypingNoticeCalls: [(roomId: String, isTyping: Bool)] = []
     var messagesCalls: [(roomId: String, limit: UInt64, from: String?)] = []
     var leaveRoomCalls: [String] = []
     var stopSyncCalls = 0
@@ -33,6 +34,7 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var editMessageError: Error?
     var redactMessageError: Error?
     var sendReadReceiptError: Error?
+    var sendTypingNoticeError: Error?
     var messagesError: Error?
     var roomsError: Error?
     var leaveRoomError: Error?
@@ -66,6 +68,11 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     func sendReadReceipt(roomId: String, eventId: String) async throws {
         try errorFor(sendReadReceiptError)
         sendReadReceiptCalls.append((roomId, eventId))
+    }
+
+    func sendTypingNotice(roomId: String, isTyping: Bool) async throws {
+        try errorFor(sendTypingNoticeError)
+        sendTypingNoticeCalls.append((roomId, isTyping))
     }
 
     func messages(roomId: String, limit: UInt64, from: String?) async throws -> MessageBatch {

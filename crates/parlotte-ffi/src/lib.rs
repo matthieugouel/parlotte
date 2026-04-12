@@ -254,6 +254,7 @@ impl From<CoreLoginMethods> for LoginMethods {
 #[uniffi::export(callback_interface)]
 pub trait ParlotteSyncListener: Send + Sync {
     fn on_sync_update(&self);
+    fn on_typing_update(&self, room_id: String, user_ids: Vec<String>);
 }
 
 /// Bridge from the FFI callback to the core SyncListener trait.
@@ -268,6 +269,10 @@ unsafe impl Sync for SyncListenerBridge {}
 impl parlotte_core::SyncListener for SyncListenerBridge {
     fn on_sync_update(&self) {
         self.inner.on_sync_update();
+    }
+
+    fn on_typing_update(&self, room_id: String, user_ids: Vec<String>) {
+        self.inner.on_typing_update(room_id, user_ids);
     }
 }
 
@@ -348,6 +353,10 @@ impl ParlotteClientFFI {
 
     pub fn send_read_receipt(&self, room_id: String, event_id: String) -> Result<(), ParlotteError> {
         Ok(self.inner.send_read_receipt(&room_id, &event_id)?)
+    }
+
+    pub fn send_typing_notice(&self, room_id: String, is_typing: bool) -> Result<(), ParlotteError> {
+        Ok(self.inner.send_typing_notice(&room_id, is_typing)?)
     }
 
     pub fn edit_message(&self, room_id: String, event_id: String, new_body: String) -> Result<(), ParlotteError> {

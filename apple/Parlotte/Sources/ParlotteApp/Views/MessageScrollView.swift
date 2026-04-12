@@ -85,7 +85,7 @@ struct MessageScrollView<Content: View>: NSViewRepresentable {
                 // Clamp offset to [0, max] to ignore elastic overscroll
                 let clampedOffset = max(0, min(offset, contentHeight - visibleHeight))
                 coord.lastDistanceFromBottom = contentHeight - clampedOffset - visibleHeight
-                coord.lastWasAtBottom = coord.lastDistanceFromBottom < 2
+                coord.lastWasAtBottom = coord.lastDistanceFromBottom < 20
             }
 
             if offset <= 0 && !coord.isFrozen && coord.pendingAction == nil {
@@ -122,6 +122,12 @@ struct MessageScrollView<Content: View>: NSViewRepresentable {
             coordinator.pendingScrollToTop = false
         }
 
+        // Compute current distance from bottom for scroll decisions
+        let currentOffset = scrollView.contentView.bounds.origin.y
+        let currentVisibleHeight = scrollView.contentView.bounds.height
+        let currentContentHeight = scrollView.documentView?.frame.height ?? 0
+        let currentDistFromBottom = currentContentHeight - currentOffset - currentVisibleHeight
+
         // Decide the scroll action BEFORE updating content
         if !coordinator.hasScrolledToBottom {
             if itemCount > 0 {
@@ -133,9 +139,16 @@ struct MessageScrollView<Content: View>: NSViewRepresentable {
             coordinator.pendingAction = .preserveDistanceFromBottom(
                 coordinator.lastDistanceFromBottom
             )
-        } else if lastItemChanged && coordinator.lastWasAtBottom {
-            coordinator.pendingAction = .scrollToBottom
+        } else if lastItemChanged {
+            // New message at the end — scroll to bottom if we're near it.
+            // Use the live measurement, not the cached lastWasAtBottom, because
+            // external layout changes (typing indicator, window resize) can
+            // invalidate the cached value.
+            if currentDistFromBottom < 80 {
+                coordinator.pendingAction = .scrollToBottom
+            }
         }
+
 
         coordinator.lastKnownItemCount = itemCount
         coordinator.lastKnownLastItemId = lastItemId
@@ -167,6 +180,7 @@ struct MessageScrollView<Content: View>: NSViewRepresentable {
         var scrollObserver: NSObjectProtocol?
         var frameObserver: NSObjectProtocol?
         var debounceTimer: Timer?
+        var fallbackTimer: Timer?
         var hasScrolledToBottom = false
         var lastKnownItemCount = 0
         var lastKnownLastItemId: String?
@@ -184,6 +198,7 @@ struct MessageScrollView<Content: View>: NSViewRepresentable {
                 frameObserver = nil
             }
             debounceTimer?.invalidate()
+            fallbackTimer?.invalidate()
 
             guard let documentView = scrollView.documentView else { return }
             documentView.postsFrameChangedNotifications = true
@@ -195,20 +210,33 @@ struct MessageScrollView<Content: View>: NSViewRepresentable {
             ) { [weak self, weak scrollView] _ in
                 guard let self, let scrollView, self.pendingAction != nil else { return }
 
-                // Debounce: wait for layout to settle (no frame changes for 50ms)
+                // Frame changed — cancel the fallback, debounce for layout to settle
+                self.fallbackTimer?.invalidate()
                 self.debounceTimer?.invalidate()
                 self.debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: false) { [weak self, weak scrollView] _ in
-                    guard let self, let scrollView, let action = self.pendingAction else { return }
-                    self.pendingAction = nil
-
-                    if let obs = self.frameObserver {
-                        NotificationCenter.default.removeObserver(obs)
-                        self.frameObserver = nil
-                    }
-
-                    self.applyAction(action, scrollView: scrollView)
+                    self?.consumeAction(scrollView: scrollView)
                 }
             }
+
+            // Fallback: if no frame change happens (e.g., content replaced
+            // in-place with no size change), apply the action after 150ms.
+            fallbackTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self, weak scrollView] _ in
+                self?.consumeAction(scrollView: scrollView)
+            }
+        }
+
+        private func consumeAction(scrollView: NSScrollView?) {
+            guard let scrollView, let action = pendingAction else { return }
+            pendingAction = nil
+            fallbackTimer?.invalidate()
+            debounceTimer?.invalidate()
+
+            if let obs = frameObserver {
+                NotificationCenter.default.removeObserver(obs)
+                frameObserver = nil
+            }
+
+            applyAction(action, scrollView: scrollView)
         }
 
         private func applyAction(_ action: ScrollAction, scrollView: NSScrollView) {
@@ -233,6 +261,7 @@ struct MessageScrollView<Content: View>: NSViewRepresentable {
 
         deinit {
             debounceTimer?.invalidate()
+            fallbackTimer?.invalidate()
             if let observer = scrollObserver {
                 NotificationCenter.default.removeObserver(observer)
             }

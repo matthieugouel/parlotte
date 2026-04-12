@@ -775,6 +775,31 @@ impl ParlotteClient {
         })
     }
 
+    /// Send a typing notice for the given room.
+    /// The SDK internally debounces repeated calls with `is_typing: true`.
+    pub fn send_typing_notice(&self, room_id: &str, is_typing: bool) -> Result<()> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid room ID: {e}"),
+            })?;
+
+            let room = client
+                .get_room(room_id)
+                .ok_or_else(|| ParlotteError::Room {
+                    message: format!("room {room_id} not found"),
+                })?;
+
+            room.typing_notice(is_typing)
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to send typing notice: {e}"),
+                })?;
+
+            Ok(())
+        })
+    }
+
     /// Get the list of members in a room.
     pub fn room_members(&self, room_id: &str) -> Result<Vec<RoomMemberInfo>> {
         use matrix_sdk::RoomMemberships;
@@ -1045,6 +1070,24 @@ mod tests {
     fn send_read_receipt_rejects_nonexistent_room() {
         let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
         let result = client.send_read_receipt("!room:example.com", "$event:example.com");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ParlotteError::Room { .. }));
+        assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn send_typing_notice_rejects_invalid_room_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.send_typing_notice("not-a-room-id", true);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
+    }
+
+    #[test]
+    fn send_typing_notice_rejects_nonexistent_room() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.send_typing_notice("!nonexistent:example.com", true);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, ParlotteError::Room { .. }));

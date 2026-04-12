@@ -126,6 +126,13 @@ public actor MatrixClient {
         }.value
     }
 
+    public func sendTypingNotice(roomId: String, isTyping: Bool) async throws {
+        let ffi = self.ffi
+        try await Task.detached {
+            try ffi.sendTypingNotice(roomId: roomId, isTyping: isTyping)
+        }.value
+    }
+
     public func messages(roomId: String, limit: UInt64 = 50, from: String? = nil) async throws -> MessageBatch {
         let ffi = self.ffi
         return try await Task.detached {

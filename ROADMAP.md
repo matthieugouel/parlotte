@@ -31,7 +31,8 @@
 - [x] Message editing
 - [x] Message deletion
 - [x] Reply to messages
-- [ ] Typing indicators
+- [x] Typing indicators
+- [ ] Reactions (emoji)
 - [x] Rich text rendering (HTML formatted messages)
 - [x] Non-text message indicators (image, file, video, audio, location)
 - [ ] Media messages (display images, download files)

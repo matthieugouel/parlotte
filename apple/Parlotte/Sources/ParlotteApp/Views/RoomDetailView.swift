@@ -122,6 +122,13 @@ struct RoomDetailView: View {
             // Message list
             messageList
 
+            // Typing indicator
+            if !appState.currentRoomTypingUsers.isEmpty {
+                TypingIndicator(userIds: appState.currentRoomTypingUsers)
+                    .padding(.horizontal)
+                    .padding(.vertical, 4)
+            }
+
             Divider()
 
             // Compose area
@@ -167,6 +174,15 @@ struct RoomDetailView: View {
                         .lineLimit(1...5)
                         .onSubmit {
                             send()
+                        }
+                        .onChange(of: messageText) { oldValue, newValue in
+                            let wasEmpty = oldValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            let isEmpty = newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            if wasEmpty && !isEmpty {
+                                Task { await appState.sendTypingNotice(isTyping: true) }
+                            } else if !wasEmpty && isEmpty {
+                                Task { await appState.sendTypingNotice(isTyping: false) }
+                            }
                         }
 
                     Button {
@@ -291,6 +307,33 @@ struct RoomDetailView: View {
             } else {
                 await appState.sendMessage(body: body)
             }
+        }
+    }
+}
+
+private struct TypingIndicator: View {
+    let userIds: [String]
+
+    private var displayText: String {
+        let names = userIds.map { userId -> String in
+            if userId.hasPrefix("@"), let colon = userId.firstIndex(of: ":") {
+                return String(userId[userId.index(after: userId.startIndex)..<colon])
+            }
+            return userId
+        }
+        switch names.count {
+        case 1: return "\(names[0]) is typing..."
+        case 2: return "\(names[0]) and \(names[1]) are typing..."
+        default: return "Several people are typing..."
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(displayText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
         }
     }
 }

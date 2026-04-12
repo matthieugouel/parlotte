@@ -677,4 +677,71 @@ mod tests {
             "Reply should reference the original message for Bob too"
         );
     }
+
+    // -- Test: Typing indicators between two users --
+
+    #[test]
+    fn typing_indicator_between_users() {
+        require_synapse();
+        let (alice, alice_id) = register_and_login("typing_alice");
+        let (bob, bob_id) = register_and_login("typing_bob");
+
+        // Alice creates a room and invites Bob
+        let room_id = alice.create_room("Typing Test", false).unwrap();
+        alice.sync_once().unwrap();
+        alice.invite_user(&room_id, &bob_id).unwrap();
+
+        bob.sync_once().unwrap();
+        bob.join_room(&room_id).unwrap();
+        alice.sync_once().unwrap();
+        bob.sync_once().unwrap();
+
+        // Alice starts typing
+        alice.send_typing_notice(&room_id, true).unwrap();
+
+        // Bob syncs with a listener that captures typing updates
+        let typing_updates: std::sync::Arc<
+            std::sync::Mutex<Vec<(String, Vec<String>)>>,
+        > = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        struct TypingListener {
+            updates: std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<String>)>>>,
+        }
+        impl parlotte_core::SyncListener for TypingListener {
+            fn on_sync_update(&self) {}
+            fn on_typing_update(&self, room_id: String, user_ids: Vec<String>) {
+                self.updates.lock().unwrap().push((room_id, user_ids));
+            }
+        }
+
+        let listener = std::sync::Arc::new(TypingListener {
+            updates: typing_updates.clone(),
+        });
+
+        // Start sync for Bob and wait for typing to arrive
+        bob.start_sync(listener).unwrap();
+
+        // Wait up to 10 seconds for a typing update
+        let start = std::time::Instant::now();
+        let mut found_typing = false;
+        while start.elapsed() < std::time::Duration::from_secs(10) {
+            let updates = typing_updates.lock().unwrap();
+            if updates
+                .iter()
+                .any(|(rid, uids)| *rid == room_id && uids.contains(&alice_id))
+            {
+                found_typing = true;
+                break;
+            }
+            drop(updates);
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+
+        bob.stop_sync();
+
+        assert!(
+            found_typing,
+            "Bob should have received a typing update showing Alice is typing"
+        );
+    }
 }

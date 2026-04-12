@@ -1,4 +1,5 @@
 use matrix_sdk::config::SyncSettings;
+use matrix_sdk::ruma::events::typing::SyncTypingEvent;
 use matrix_sdk::LoopCtrl;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -10,6 +11,10 @@ use crate::error::{ParlotteError, Result};
 /// Called on each successful sync response so the UI layer can refresh.
 pub trait SyncListener: Send + Sync + 'static {
     fn on_sync_update(&self);
+
+    /// Called when typing state changes in a room.
+    /// `user_ids` contains the full set of currently-typing users (not a delta).
+    fn on_typing_update(&self, _room_id: String, _user_ids: Vec<String>) {}
 }
 
 /// Manages the Matrix sync loop lifecycle.
@@ -64,6 +69,21 @@ impl SyncManager {
 
         runtime.spawn(async move {
             tracing::debug!("persistent sync loop starting");
+
+            // Register a global event handler for typing notifications.
+            // Fires for every room when typing state changes during sync.
+            let typing_listener = listener.clone();
+            client.add_event_handler(
+                move |event: SyncTypingEvent, room: matrix_sdk::Room| {
+                    let listener = typing_listener.clone();
+                    async move {
+                        let room_id = room.room_id().to_string();
+                        let user_ids: Vec<String> =
+                            event.content.user_ids.iter().map(|uid| uid.to_string()).collect();
+                        listener.on_typing_update(room_id, user_ids);
+                    }
+                },
+            );
 
             let result = client
                 .sync_with_callback(settings, |_response| {

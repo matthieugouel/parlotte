@@ -21,6 +21,7 @@ public protocol MatrixClientProtocol: Sendable {
     func editMessage(roomId: String, eventId: String, newBody: String) async throws
     func redactMessage(roomId: String, eventId: String) async throws
     func sendReadReceipt(roomId: String, eventId: String) async throws
+    func sendTypingNotice(roomId: String, isTyping: Bool) async throws
     func messages(roomId: String, limit: UInt64, from: String?) async throws -> MessageBatch
     func loginMethods() async throws -> LoginMethods
     func ssoLoginUrl(redirectUrl: String, idpId: String?) async throws -> String

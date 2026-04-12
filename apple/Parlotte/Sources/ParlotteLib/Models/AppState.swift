@@ -17,6 +17,12 @@ public final class AppState {
     public var rooms: [RoomInfo] = []
     public var selectedRoomId: String? {
         didSet {
+            // Cancel typing indicator for the room we're leaving
+            if let oldRoom = oldValue, let client {
+                Task {
+                    try? await client.sendTypingNotice(roomId: oldRoom, isTyping: false)
+                }
+            }
             messages = []
             messageEndToken = nil
             hasMoreMessages = false
@@ -25,17 +31,29 @@ public final class AppState {
                 if let idx = rooms.firstIndex(where: { $0.id == roomId }) {
                     rooms[idx].unreadCount = 0
                 }
-                Task {
+                roomRefreshTask = Task {
                     await refreshMessages()
                     await sendReadReceiptForLatestMessage()
                 }
             }
         }
     }
+    /// Task spawned by `selectedRoomId.didSet` to refresh messages.
+    /// Exposed as internal so tests can await its completion before asserting.
+    var roomRefreshTask: Task<Void, Never>?
     public var messages: [MessageInfo] = []
     public var hasMoreMessages = false
     public var isLoadingMoreMessages = false
     private var messageEndToken: String?
+
+    /// Maps room ID to the list of user IDs currently typing (excluding own user).
+    public var typingUsers: [String: [String]] = [:]
+
+    /// User IDs typing in the currently selected room.
+    public var currentRoomTypingUsers: [String] {
+        guard let roomId = selectedRoomId else { return [] }
+        return typingUsers[roomId] ?? []
+    }
 
     public var homeserverURL = "http://localhost:8008"
     public var username = ""
@@ -184,6 +202,7 @@ public final class AppState {
         isLoggedIn = false
         loggedInUserId = nil
         rooms = []
+        typingUsers = [:]
         selectedRoomId = nil
         clearSavedSession()
         clearStore()
@@ -225,17 +244,57 @@ public final class AppState {
         }
     }
 
-    /// Called on sync — appends only genuinely new messages without re-fetching the full batch.
+    /// Called on sync — checks for new messages, edits, and redactions.
+    /// Minimises array mutations to avoid unnecessary SwiftUI re-renders.
     public func appendNewMessages() async {
         guard let client, let roomId = selectedRoomId, !messages.isEmpty else { return }
         do {
-            let batch = try await client.messages(roomId: roomId, limit: 5, from: nil)
+            let batch = try await client.messages(roomId: roomId, limit: 50, from: nil)
+            let serverMessages = batch.messages
+            let serverById = Dictionary(
+                serverMessages.map { ($0.eventId, $0) },
+                uniquingKeysWith: { _, last in last }
+            )
+
+            var changed = false
+
+            // 1. Update edited messages in place
+            for i in messages.indices {
+                if let serverMsg = serverById[messages[i].eventId] {
+                    if messages[i].body != serverMsg.body
+                        || messages[i].isEdited != serverMsg.isEdited
+                    {
+                        messages[i] = serverMsg
+                        changed = true
+                    }
+                }
+            }
+
+            // 2. Remove redacted messages — only those recent enough that the
+            //    server batch should contain them (preserves older paginated messages
+            //    and in-flight optimistic placeholders)
+            let serverIds = Set(serverMessages.map(\.eventId))
+            if let oldestServerTs = serverMessages.first?.timestampMs {
+                let before = messages.count
+                messages.removeAll { msg in
+                    !msg.eventId.hasPrefix("~optimistic:")
+                        && msg.timestampMs >= oldestServerTs
+                        && !serverIds.contains(msg.eventId)
+                }
+                if messages.count != before { changed = true }
+            }
+
+            // 3. Add genuinely new messages
             let existingIds = Set(messages.map(\.eventId))
-            let newMessages = batch.messages.filter { !existingIds.contains($0.eventId) }
+            let newMessages = serverMessages.filter { !existingIds.contains($0.eventId) }
             if !newMessages.isEmpty {
-                // Remove optimistic placeholders that the server has now confirmed
+                // Replace optimistic placeholders now that real messages arrived
                 messages.removeAll { $0.eventId.hasPrefix("~optimistic:") }
                 messages.append(contentsOf: newMessages)
+                changed = true
+            }
+
+            if changed {
                 await sendReadReceiptForLatestMessage()
             }
         } catch {
@@ -409,6 +468,22 @@ public final class AppState {
         }
     }
 
+    /// Send a typing notice for the currently selected room. Best-effort.
+    public func sendTypingNotice(isTyping: Bool) async {
+        guard let client, let roomId = selectedRoomId else { return }
+        do {
+            try await client.sendTypingNotice(roomId: roomId, isTyping: isTyping)
+        } catch {
+            // Non-fatal — typing notices are best-effort
+        }
+    }
+
+    /// Called by SyncUpdateHandler when typing state changes in a room.
+    public func handleTypingUpdate(roomId: String, userIds: [String]) {
+        let others = userIds.filter { $0 != loggedInUserId }
+        typingUsers[roomId] = others
+    }
+
     public func inviteUser(userId: String) async {
         guard let client, let roomId = selectedRoomId else { return }
         do {
@@ -521,8 +596,19 @@ private final class SyncUpdateHandler: ParlotteSyncListener, @unchecked Sendable
             // Own messages don't increment unreadCount, so we can't gate
             // on that — the dedup in appendNewMessages handles duplicates.
             if appState.selectedRoomId != nil {
-                await appState.appendNewMessages()
+                if appState.messages.isEmpty {
+                    await appState.refreshMessages()
+                } else {
+                    await appState.appendNewMessages()
+                }
             }
+        }
+    }
+
+    func onTypingUpdate(roomId: String, userIds: [String]) {
+        Task { @MainActor [weak appState] in
+            guard let appState else { return }
+            appState.handleTypingUpdate(roomId: roomId, userIds: userIds)
         }
     }
 }

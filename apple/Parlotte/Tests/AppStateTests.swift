@@ -8,12 +8,18 @@ struct AppStateTests {
     private var appState: AppState
     private var mock: MockMatrixClient
 
-    init() {
+    init() async {
         mock = MockMatrixClient()
         appState = AppState(profile: "test")
-        appState.client = mock
         appState.loggedInUserId = "@alice:example.com"
         appState.selectedRoomId = "!room:example.com"
+        appState.client = mock
+        // selectedRoomId.didSet spawns a Task (refreshMessages + sendReadReceipt).
+        // Await it to prevent it from racing with test bodies.
+        await appState.roomRefreshTask?.value
+        // Reset call tracking so background setup doesn't pollute test assertions.
+        mock.messagesCalls.removeAll()
+        mock.sendReadReceiptCalls.removeAll()
     }
 
     // MARK: - Helpers
@@ -260,6 +266,112 @@ struct AppStateTests {
         #expect(appState.messages[1].body == "New")
     }
 
+    @Test("Append new messages picks up edits")
+    mutating func appendNewMessagesPicksUpEdits() async {
+        appState.messages = [makeMessage(eventId: "$e1:x.com", body: "Original")]
+        mock.messagesResult = MessageBatch(
+            messages: [
+                MessageInfo(
+                    eventId: "$e1:x.com", sender: "@bob:example.com",
+                    body: "Edited", formattedBody: nil, messageType: "text",
+                    timestampMs: 1_700_000_000_000, isEdited: true, repliedToEventId: nil
+                ),
+            ],
+            endToken: nil
+        )
+
+        await appState.appendNewMessages()
+
+        #expect(appState.messages.count == 1)
+        #expect(appState.messages[0].body == "Edited")
+        #expect(appState.messages[0].isEdited == true)
+    }
+
+    @Test("Append new messages removes redacted messages")
+    mutating func appendNewMessagesRemovesRedacted() async {
+        appState.messages = [
+            makeMessage(eventId: "$e1:x.com", body: "Keep"),
+            makeMessage(eventId: "$e2:x.com", body: "Redacted"),
+        ]
+        // Server only returns the non-redacted message
+        mock.messagesResult = MessageBatch(
+            messages: [makeMessage(eventId: "$e1:x.com", body: "Keep")],
+            endToken: nil
+        )
+
+        await appState.appendNewMessages()
+
+        #expect(appState.messages.count == 1)
+        #expect(appState.messages[0].eventId == "$e1:x.com")
+    }
+
+    @Test("Append new messages preserves optimistic placeholders when server has not confirmed")
+    mutating func appendNewMessagesPreservesOptimisticBeforeConfirmation() async {
+        appState.messages = [
+            makeMessage(eventId: "$e1:x.com", body: "Old"),
+            MessageInfo(
+                eventId: "~optimistic:abc", sender: "@alice:example.com",
+                body: "Sending...", formattedBody: nil, messageType: "text",
+                timestampMs: 1_700_000_001_000, isEdited: false, repliedToEventId: nil
+            ),
+        ]
+        // Server returns the old message but not the optimistic one yet
+        mock.messagesResult = MessageBatch(
+            messages: [makeMessage(eventId: "$e1:x.com", body: "Old")],
+            endToken: nil
+        )
+
+        await appState.appendNewMessages()
+
+        #expect(appState.messages.count == 2, "Optimistic placeholder should be preserved")
+        #expect(appState.messages[1].eventId == "~optimistic:abc")
+    }
+
+    @Test("Append new messages does not mutate array when nothing changed")
+    mutating func appendNewMessagesNoMutationWhenUnchanged() async {
+        let msg = makeMessage(eventId: "$e1:x.com", body: "Same")
+        appState.messages = [msg]
+        mock.messagesResult = MessageBatch(messages: [msg], endToken: nil)
+
+        await appState.appendNewMessages()
+
+        #expect(appState.messages.count == 1)
+        #expect(appState.messages[0].body == "Same")
+    }
+
+    @Test("Append new messages skips when messages is empty")
+    mutating func appendNewMessagesSkipsWhenEmpty() async {
+        appState.messages = []
+        mock.messagesResult = MessageBatch(
+            messages: [makeMessage(eventId: "$e1:x.com", body: "Server msg")],
+            endToken: nil
+        )
+
+        await appState.appendNewMessages()
+
+        #expect(appState.messages.isEmpty, "Should bail early when messages is empty")
+        #expect(mock.messagesCalls.isEmpty, "Should not call server")
+    }
+
+    @Test("Sync with empty messages falls back to refreshMessages")
+    mutating func syncWithEmptyMessagesFallsBackToRefresh() async {
+        appState.messages = []
+        mock.messagesResult = MessageBatch(
+            messages: [makeMessage(eventId: "$e1:x.com", body: "History")],
+            endToken: nil
+        )
+
+        // Simulate what the sync handler does
+        if appState.messages.isEmpty {
+            await appState.refreshMessages()
+        } else {
+            await appState.appendNewMessages()
+        }
+
+        #expect(appState.messages.count == 1)
+        #expect(appState.messages[0].body == "History")
+    }
+
     // MARK: - Message Pagination
 
     @Test("Load more messages prepends older messages")
@@ -406,6 +518,7 @@ struct AppStateTests {
         #expect(appState.loggedInUserId == nil)
         #expect(appState.isSyncActive == false)
         #expect(appState.rooms.isEmpty)
+        #expect(appState.typingUsers.isEmpty)
         #expect(appState.selectedRoomId == nil)
         #expect(appState.messages.isEmpty)
         #expect(appState.client == nil)
@@ -419,5 +532,87 @@ struct AppStateTests {
 
         #expect(mock.stopSyncCalls == 1)
         #expect(mock.logoutCalls == 1)
+    }
+
+    // MARK: - Typing Indicators
+
+    @Test("Typing update filters out own user")
+    mutating func handleTypingUpdateFiltersOwnUser() {
+        appState.handleTypingUpdate(
+            roomId: "!room:example.com",
+            userIds: ["@alice:example.com", "@bob:example.com", "@carol:example.com"]
+        )
+
+        let typing = appState.typingUsers["!room:example.com"]
+        #expect(typing == ["@bob:example.com", "@carol:example.com"])
+    }
+
+    @Test("Typing update replaces previous state")
+    mutating func handleTypingUpdateReplacesState() {
+        appState.handleTypingUpdate(roomId: "!room:example.com", userIds: ["@bob:example.com"])
+        appState.handleTypingUpdate(roomId: "!room:example.com", userIds: ["@carol:example.com"])
+
+        let typing = appState.typingUsers["!room:example.com"]
+        #expect(typing == ["@carol:example.com"])
+    }
+
+    @Test("currentRoomTypingUsers returns selected room's typing users")
+    mutating func currentRoomTypingUsersReturnsSelectedRoom() {
+        appState.handleTypingUpdate(roomId: "!room:example.com", userIds: ["@bob:example.com"])
+        appState.handleTypingUpdate(roomId: "!other:example.com", userIds: ["@carol:example.com"])
+
+        #expect(appState.currentRoomTypingUsers == ["@bob:example.com"])
+    }
+
+    @Test("currentRoomTypingUsers empty when no room selected")
+    mutating func currentRoomTypingUsersEmptyWhenNoRoom() {
+        appState.selectedRoomId = nil
+        appState.handleTypingUpdate(roomId: "!room:example.com", userIds: ["@bob:example.com"])
+
+        #expect(appState.currentRoomTypingUsers.isEmpty)
+    }
+
+    @Test("Empty typing update clears state for room")
+    mutating func emptyTypingUpdateClearsState() {
+        appState.handleTypingUpdate(roomId: "!room:example.com", userIds: ["@bob:example.com"])
+        appState.handleTypingUpdate(roomId: "!room:example.com", userIds: [])
+
+        #expect(appState.currentRoomTypingUsers.isEmpty)
+    }
+
+    @Test("Logout clears typing state")
+    mutating func logoutClearsTypingState() async {
+        appState.handleTypingUpdate(roomId: "!room:example.com", userIds: ["@bob:example.com"])
+
+        await appState.logout()
+
+        #expect(appState.typingUsers.isEmpty)
+    }
+
+    @Test("Send typing notice calls client")
+    mutating func sendTypingNoticeCallsClient() async {
+        await appState.sendTypingNotice(isTyping: true)
+
+        #expect(mock.sendTypingNoticeCalls.count == 1)
+        #expect(mock.sendTypingNoticeCalls[0].roomId == "!room:example.com")
+        #expect(mock.sendTypingNoticeCalls[0].isTyping == true)
+    }
+
+    @Test("Send typing notice requires selected room")
+    mutating func sendTypingNoticeRequiresSelectedRoom() async {
+        appState.selectedRoomId = nil
+
+        await appState.sendTypingNotice(isTyping: true)
+
+        #expect(mock.sendTypingNoticeCalls.isEmpty)
+    }
+
+    @Test("Send typing notice is best-effort")
+    mutating func sendTypingNoticeIsBestEffort() async {
+        mock.sendTypingNoticeError = ParlotteError.Room(message: "network error")
+
+        await appState.sendTypingNotice(isTyping: true)
+
+        #expect(appState.errorMessage == nil, "Typing notice errors should be swallowed")
     }
 }
