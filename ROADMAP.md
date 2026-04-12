@@ -48,3 +48,11 @@
 - [ ] Native OIDC login (MAS / OpenID Connect)
 - [ ] Device verification (cross-signing)
 - [ ] Key backup and recovery
+
+## Testing
+- [x] Unit tests for input validation and error paths (parlotte-core)
+- [x] Integration tests against real Synapse (Docker)
+- [x] FFI round-trip tests (type conversions, error mapping)
+- [ ] CI pipeline (GitHub Actions: build, test, clippy, fmt)
+- [ ] Persistent sync loop integration test (start sync, receive callback, stop)
+- [ ] Automated UI smoke test (XCUITest: launch, login, send message)

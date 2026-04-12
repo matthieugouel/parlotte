@@ -377,3 +377,298 @@ impl ParlotteClientFFI {
         self.inner.is_syncing()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- RoomInfo round-trip --
+
+    #[test]
+    fn room_info_converts_all_fields() {
+        let core = CoreRoomInfo {
+            id: "!room:example.com".into(),
+            display_name: "General".into(),
+            is_encrypted: true,
+            is_public: false,
+            topic: Some("Welcome".into()),
+            is_invited: false,
+            unread_count: 42,
+        };
+        let ffi: RoomInfo = core.into();
+        assert_eq!(ffi.id, "!room:example.com");
+        assert_eq!(ffi.display_name, "General");
+        assert!(ffi.is_encrypted);
+        assert!(!ffi.is_public);
+        assert_eq!(ffi.topic.as_deref(), Some("Welcome"));
+        assert!(!ffi.is_invited);
+        assert_eq!(ffi.unread_count, 42);
+    }
+
+    #[test]
+    fn room_info_converts_none_topic() {
+        let core = CoreRoomInfo {
+            id: "!r:x.com".into(),
+            display_name: "No Topic".into(),
+            is_encrypted: false,
+            is_public: true,
+            topic: None,
+            is_invited: true,
+            unread_count: 0,
+        };
+        let ffi: RoomInfo = core.into();
+        assert!(ffi.topic.is_none());
+        assert!(ffi.is_public);
+        assert!(ffi.is_invited);
+    }
+
+    // -- MessageInfo round-trip --
+
+    #[test]
+    fn message_info_converts_all_fields() {
+        let core = CoreMessageInfo {
+            event_id: "$evt:example.com".into(),
+            sender: "@alice:example.com".into(),
+            body: "Hello".into(),
+            formatted_body: Some("<b>Hello</b>".into()),
+            message_type: "text".into(),
+            timestamp_ms: 1700000000000,
+            is_edited: true,
+        };
+        let ffi: MessageInfo = core.into();
+        assert_eq!(ffi.event_id, "$evt:example.com");
+        assert_eq!(ffi.sender, "@alice:example.com");
+        assert_eq!(ffi.body, "Hello");
+        assert_eq!(ffi.formatted_body.as_deref(), Some("<b>Hello</b>"));
+        assert_eq!(ffi.message_type, "text");
+        assert_eq!(ffi.timestamp_ms, 1700000000000);
+        assert!(ffi.is_edited);
+    }
+
+    #[test]
+    fn message_info_converts_none_formatted_body() {
+        let core = CoreMessageInfo {
+            event_id: "$e:x.com".into(),
+            sender: "@b:x.com".into(),
+            body: "plain".into(),
+            formatted_body: None,
+            message_type: "notice".into(),
+            timestamp_ms: 0,
+            is_edited: false,
+        };
+        let ffi: MessageInfo = core.into();
+        assert!(ffi.formatted_body.is_none());
+        assert_eq!(ffi.message_type, "notice");
+        assert!(!ffi.is_edited);
+    }
+
+    // -- MessageBatch round-trip --
+
+    #[test]
+    fn message_batch_converts_with_token() {
+        let core = CoreMessageBatch {
+            messages: vec![CoreMessageInfo {
+                event_id: "$1:x.com".into(),
+                sender: "@a:x.com".into(),
+                body: "msg".into(),
+                formatted_body: None,
+                message_type: "text".into(),
+                timestamp_ms: 100,
+                is_edited: false,
+            }],
+            end_token: Some("t47_42_0_1".into()),
+        };
+        let ffi: MessageBatch = core.into();
+        assert_eq!(ffi.messages.len(), 1);
+        assert_eq!(ffi.messages[0].body, "msg");
+        assert_eq!(ffi.end_token.as_deref(), Some("t47_42_0_1"));
+    }
+
+    #[test]
+    fn message_batch_converts_without_token() {
+        let core = CoreMessageBatch {
+            messages: vec![],
+            end_token: None,
+        };
+        let ffi: MessageBatch = core.into();
+        assert!(ffi.messages.is_empty());
+        assert!(ffi.end_token.is_none());
+    }
+
+    // -- SessionInfo round-trip --
+
+    #[test]
+    fn session_info_converts() {
+        let core = CoreSessionInfo {
+            user_id: "@alice:example.com".into(),
+            device_id: "ABCDEF".into(),
+        };
+        let ffi: SessionInfo = core.into();
+        assert_eq!(ffi.user_id, "@alice:example.com");
+        assert_eq!(ffi.device_id, "ABCDEF");
+    }
+
+    // -- MatrixSessionData round-trip (bidirectional) --
+
+    #[test]
+    fn matrix_session_data_core_to_ffi() {
+        let core = CoreMatrixSessionData {
+            user_id: "@bob:matrix.org".into(),
+            device_id: "DEV999".into(),
+            access_token: "syt_secret".into(),
+        };
+        let ffi: MatrixSessionData = core.into();
+        assert_eq!(ffi.user_id, "@bob:matrix.org");
+        assert_eq!(ffi.device_id, "DEV999");
+        assert_eq!(ffi.access_token, "syt_secret");
+    }
+
+    #[test]
+    fn matrix_session_data_ffi_to_core() {
+        let ffi = MatrixSessionData {
+            user_id: "@carol:example.com".into(),
+            device_id: "PHONE1".into(),
+            access_token: "tok_abc".into(),
+        };
+        let core: CoreMatrixSessionData = ffi.into();
+        assert_eq!(core.user_id, "@carol:example.com");
+        assert_eq!(core.device_id, "PHONE1");
+        assert_eq!(core.access_token, "tok_abc");
+    }
+
+    // -- PublicRoomInfo round-trip --
+
+    #[test]
+    fn public_room_info_converts_all_fields() {
+        let core = CorePublicRoomInfo {
+            id: "!pub:example.com".into(),
+            name: Some("Lobby".into()),
+            topic: Some("Welcome all".into()),
+            member_count: 150,
+            alias: Some("#lobby:example.com".into()),
+        };
+        let ffi: PublicRoomInfo = core.into();
+        assert_eq!(ffi.id, "!pub:example.com");
+        assert_eq!(ffi.name.as_deref(), Some("Lobby"));
+        assert_eq!(ffi.topic.as_deref(), Some("Welcome all"));
+        assert_eq!(ffi.member_count, 150);
+        assert_eq!(ffi.alias.as_deref(), Some("#lobby:example.com"));
+    }
+
+    #[test]
+    fn public_room_info_converts_none_optionals() {
+        let core = CorePublicRoomInfo {
+            id: "!empty:x.com".into(),
+            name: None,
+            topic: None,
+            member_count: 0,
+            alias: None,
+        };
+        let ffi: PublicRoomInfo = core.into();
+        assert!(ffi.name.is_none());
+        assert!(ffi.topic.is_none());
+        assert!(ffi.alias.is_none());
+    }
+
+    // -- RoomMemberInfo round-trip --
+
+    #[test]
+    fn room_member_info_converts() {
+        let core = CoreRoomMemberInfo {
+            user_id: "@mod:example.com".into(),
+            display_name: Some("Moderator".into()),
+            power_level: 50,
+            role: "moderator".into(),
+        };
+        let ffi: RoomMemberInfo = core.into();
+        assert_eq!(ffi.user_id, "@mod:example.com");
+        assert_eq!(ffi.display_name.as_deref(), Some("Moderator"));
+        assert_eq!(ffi.power_level, 50);
+        assert_eq!(ffi.role, "moderator");
+    }
+
+    // -- SsoProvider round-trip --
+
+    #[test]
+    fn sso_provider_converts() {
+        let core = CoreSsoProvider {
+            id: "oidc-github".into(),
+            name: "GitHub".into(),
+        };
+        let ffi: SsoProvider = core.into();
+        assert_eq!(ffi.id, "oidc-github");
+        assert_eq!(ffi.name, "GitHub");
+    }
+
+    // -- LoginMethods round-trip --
+
+    #[test]
+    fn login_methods_converts_with_providers() {
+        let core = CoreLoginMethods {
+            supports_password: true,
+            supports_sso: true,
+            sso_providers: vec![
+                CoreSsoProvider { id: "google".into(), name: "Google".into() },
+                CoreSsoProvider { id: "github".into(), name: "GitHub".into() },
+            ],
+        };
+        let ffi: LoginMethods = core.into();
+        assert!(ffi.supports_password);
+        assert!(ffi.supports_sso);
+        assert_eq!(ffi.sso_providers.len(), 2);
+        assert_eq!(ffi.sso_providers[0].id, "google");
+        assert_eq!(ffi.sso_providers[1].name, "GitHub");
+    }
+
+    #[test]
+    fn login_methods_converts_empty_providers() {
+        let core = CoreLoginMethods {
+            supports_password: true,
+            supports_sso: false,
+            sso_providers: vec![],
+        };
+        let ffi: LoginMethods = core.into();
+        assert!(ffi.supports_password);
+        assert!(!ffi.supports_sso);
+        assert!(ffi.sso_providers.is_empty());
+    }
+
+    // -- Error conversion --
+
+    #[test]
+    fn error_converts_all_variants() {
+        let cases = vec![
+            (CoreError::Auth { message: "bad".into() }, "Auth"),
+            (CoreError::Network { message: "timeout".into() }, "Network"),
+            (CoreError::Room { message: "gone".into() }, "Room"),
+            (CoreError::Store { message: "corrupt".into() }, "Store"),
+            (CoreError::Sync { message: "failed".into() }, "Sync"),
+            (CoreError::Unknown { message: "wat".into() }, "Unknown"),
+        ];
+
+        for (core_err, expected_variant) in cases {
+            let msg = match &core_err {
+                CoreError::Auth { message } => message.clone(),
+                CoreError::Network { message } => message.clone(),
+                CoreError::Room { message } => message.clone(),
+                CoreError::Store { message } => message.clone(),
+                CoreError::Sync { message } => message.clone(),
+                CoreError::Unknown { message } => message.clone(),
+            };
+            let ffi_err: ParlotteError = core_err.into();
+            let debug = format!("{:?}", ffi_err);
+            assert!(debug.contains(expected_variant), "expected {expected_variant} in {debug}");
+            assert!(debug.contains(&msg), "expected message '{msg}' in {debug}");
+        }
+    }
+
+    #[test]
+    fn error_preserves_message_content() {
+        let core = CoreError::Auth { message: "invalid credentials for @user:matrix.org".into() };
+        let ffi: ParlotteError = core.into();
+        assert_eq!(
+            ffi.to_string(),
+            "authentication failed: invalid credentials for @user:matrix.org"
+        );
+    }
+}
