@@ -39,3 +39,6 @@ apple/ParlotteSDK/Sources/ParlotteFFIHeaders/
 
 # Swift Package Manager
 apple/**/.build/
+
+# Compiled skill tools
+.claude/skills/ax-inspect
