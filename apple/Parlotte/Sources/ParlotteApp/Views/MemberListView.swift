@@ -1,5 +1,6 @@
-import SwiftUI
+import ParlotteLib
 import ParlotteSDK
+import SwiftUI
 
 struct MemberListView: View {
     @Environment(AppState.self) private var appState

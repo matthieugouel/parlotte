@@ -1,4 +1,5 @@
 import AppKit
+import ParlotteLib
 import SwiftUI
 
 /// An NSScrollView-backed message list that supports:

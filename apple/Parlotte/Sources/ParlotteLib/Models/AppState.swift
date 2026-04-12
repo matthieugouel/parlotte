@@ -4,18 +4,18 @@ import ParlotteSDK
 
 @Observable
 @MainActor
-final class AppState {
-    let profile: String
+public final class AppState {
+    public let profile: String
 
-    var isLoggedIn = false
-    var isLoading = false
-    var isCheckingSession = true
-    var errorMessage: String?
-    var loggedInUserId: String?
-    var isSyncActive = false
+    public var isLoggedIn = false
+    public var isLoading = false
+    public var isCheckingSession = true
+    public var errorMessage: String?
+    public var loggedInUserId: String?
+    public var isSyncActive = false
 
-    var rooms: [RoomInfo] = []
-    var selectedRoomId: String? {
+    public var rooms: [RoomInfo] = []
+    public var selectedRoomId: String? {
         didSet {
             messages = []
             messageEndToken = nil
@@ -32,28 +32,28 @@ final class AppState {
             }
         }
     }
-    var messages: [MessageInfo] = []
-    var hasMoreMessages = false
-    var isLoadingMoreMessages = false
+    public var messages: [MessageInfo] = []
+    public var hasMoreMessages = false
+    public var isLoadingMoreMessages = false
     private var messageEndToken: String?
 
-    var homeserverURL = "http://localhost:8008"
-    var username = ""
-    var password = ""
+    public var homeserverURL = "http://localhost:8008"
+    public var username = ""
+    public var password = ""
 
     // SSO state
-    var ssoProviders: [SsoProvider] = []
-    var supportsPassword = true
-    var supportsSso = false
-    var isDetectingLoginMethods = false
+    public var ssoProviders: [SsoProvider] = []
+    public var supportsPassword = true
+    public var supportsSso = false
+    public var isDetectingLoginMethods = false
 
-    private var client: MatrixClient?
+    public var client: (any MatrixClientProtocol)?
 
-    init(profile: String = "default") {
+    public init(profile: String = "default") {
         self.profile = profile
     }
 
-    func detectLoginMethods() async {
+    public func detectLoginMethods() async {
         isDetectingLoginMethods = true
         errorMessage = nil
 
@@ -75,7 +75,7 @@ final class AppState {
         isDetectingLoginMethods = false
     }
 
-    func loginWithSso(idpId: String? = nil) async {
+    public func loginWithSso(idpId: String? = nil) async {
         isLoading = true
         errorMessage = nil
 
@@ -119,7 +119,7 @@ final class AppState {
         isLoading = false
     }
 
-    func login() async {
+    public func login() async {
         isLoading = true
         errorMessage = nil
 
@@ -145,7 +145,7 @@ final class AppState {
         isLoading = false
     }
 
-    func restoreSession() async {
+    public func restoreSession() async {
         guard let saved = loadSession() else {
             isCheckingSession = false
             return
@@ -176,7 +176,7 @@ final class AppState {
         }
     }
 
-    func logout() async {
+    public func logout() async {
         client?.stopSync()
         isSyncActive = false
         try? await client?.logout()
@@ -191,7 +191,7 @@ final class AppState {
 
     /// Refresh the room list. Returns true if the selected room has new unread messages.
     @discardableResult
-    func refreshRooms() async -> Bool {
+    public func refreshRooms() async -> Bool {
         guard let client else { return false }
         do {
             var updated = try await client.rooms()
@@ -210,13 +210,13 @@ final class AppState {
         }
     }
 
-    func refreshMessages() async {
+    public func refreshMessages() async {
         guard let client, let roomId = selectedRoomId else {
             messages = []
             return
         }
         do {
-            let batch = try await client.messages(roomId: roomId)
+            let batch = try await client.messages(roomId: roomId, limit: 50, from: nil)
             messages = batch.messages
             messageEndToken = batch.endToken
             hasMoreMessages = batch.endToken != nil
@@ -226,10 +226,10 @@ final class AppState {
     }
 
     /// Called on sync — appends only genuinely new messages without re-fetching the full batch.
-    func appendNewMessages() async {
+    public func appendNewMessages() async {
         guard let client, let roomId = selectedRoomId, !messages.isEmpty else { return }
         do {
-            let batch = try await client.messages(roomId: roomId, limit: 5)
+            let batch = try await client.messages(roomId: roomId, limit: 5, from: nil)
             let existingIds = Set(messages.map(\.eventId))
             let newMessages = batch.messages.filter { !existingIds.contains($0.eventId) }
             if !newMessages.isEmpty {
@@ -256,13 +256,13 @@ final class AppState {
         )
     }
 
-    func loadMoreMessages() async {
+    public func loadMoreMessages() async {
         guard let client, let roomId = selectedRoomId,
               let token = messageEndToken, !isLoadingMoreMessages else { return }
 
         isLoadingMoreMessages = true
         do {
-            let batch = try await client.messages(roomId: roomId, from: token)
+            let batch = try await client.messages(roomId: roomId, limit: 50, from: token)
             let existingIds = Set(messages.map(\.eventId))
             let deduped = batch.messages.filter { !existingIds.contains($0.eventId) }
             if deduped.isEmpty {
@@ -279,7 +279,7 @@ final class AppState {
         isLoadingMoreMessages = false
     }
 
-    func sendMessage(body: String) async {
+    public func sendMessage(body: String) async {
         guard let client, let roomId = selectedRoomId else { return }
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -295,7 +295,7 @@ final class AppState {
         }
     }
 
-    func createRoom(name: String, isPublic: Bool) async {
+    public func createRoom(name: String, isPublic: Bool) async {
         guard let client else { return }
         do {
             _ = try await client.createRoom(name: name, isPublic: isPublic)
@@ -304,7 +304,7 @@ final class AppState {
         }
     }
 
-    func fetchPublicRooms() async -> [PublicRoomInfo] {
+    public func fetchPublicRooms() async -> [PublicRoomInfo] {
         guard let client else { return [] }
         do {
             return try await client.publicRooms()
@@ -314,7 +314,7 @@ final class AppState {
         }
     }
 
-    func joinRoom(roomId: String) async {
+    public func joinRoom(roomId: String) async {
         guard let client else { return }
         do {
             try await client.joinRoom(roomId: roomId)
@@ -323,7 +323,7 @@ final class AppState {
         }
     }
 
-    func fetchRoomMembers(roomId: String) async -> [RoomMemberInfo] {
+    public func fetchRoomMembers(roomId: String) async -> [RoomMemberInfo] {
         guard let client else { return [] }
         do {
             return try await client.roomMembers(roomId: roomId)
@@ -333,7 +333,7 @@ final class AppState {
         }
     }
 
-    func leaveRoom(roomId: String) async {
+    public func leaveRoom(roomId: String) async {
         guard let client else { return }
         do {
             try await client.leaveRoom(roomId: roomId)
@@ -345,7 +345,7 @@ final class AppState {
         }
     }
 
-    func sendReply(eventId: String, body: String) async {
+    public func sendReply(eventId: String, body: String) async {
         guard let client, let roomId = selectedRoomId else { return }
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -362,7 +362,7 @@ final class AppState {
         }
     }
 
-    func editMessage(eventId: String, newBody: String) async {
+    public func editMessage(eventId: String, newBody: String) async {
         guard let client, let roomId = selectedRoomId else { return }
         guard let idx = messages.firstIndex(where: { $0.eventId == eventId }) else { return }
 
@@ -386,7 +386,7 @@ final class AppState {
         }
     }
 
-    func deleteMessage(eventId: String) async {
+    public func deleteMessage(eventId: String) async {
         guard let client, let roomId = selectedRoomId else { return }
         guard let idx = messages.firstIndex(where: { $0.eventId == eventId }) else { return }
 
@@ -400,7 +400,7 @@ final class AppState {
         }
     }
 
-    func sendReadReceipt(roomId: String) async {
+    public func sendReadReceipt(roomId: String) async {
         guard let client, let lastMessage = messages.last else { return }
         do {
             try await client.sendReadReceipt(roomId: roomId, eventId: lastMessage.eventId)
@@ -409,7 +409,7 @@ final class AppState {
         }
     }
 
-    func inviteUser(userId: String) async {
+    public func inviteUser(userId: String) async {
         guard let client, let roomId = selectedRoomId else { return }
         do {
             try await client.inviteUser(roomId: roomId, userId: userId)

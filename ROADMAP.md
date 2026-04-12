@@ -53,6 +53,7 @@
 - [x] Unit tests for input validation and error paths (parlotte-core)
 - [x] Integration tests against real Synapse (Docker)
 - [x] FFI round-trip tests (type conversions, error mapping)
+- [x] Swift state management tests (optimistic updates, failure revert, dedup)
 - [ ] CI pipeline (GitHub Actions: build, test, clippy, fmt)
 - [ ] Persistent sync loop integration test (start sync, receive callback, stop)
 - [ ] Automated UI smoke test (XCUITest: launch, login, send message)

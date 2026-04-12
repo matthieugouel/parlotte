@@ -1,0 +1,33 @@
+import Foundation
+@_exported import ParlotteFFI
+
+/// Protocol abstracting MatrixClient for testability.
+/// AppState depends on this protocol, allowing mock injection in tests.
+public protocol MatrixClientProtocol: Sendable {
+    func login(username: String, password: String) async throws -> SessionInfo
+    func session() async -> MatrixSessionData?
+    func restoreSession(_ sessionData: MatrixSessionData) async throws
+    func logout() async throws
+    func rooms() async throws -> [RoomInfo]
+    func syncOnce() async throws
+    func createRoom(name: String, isPublic: Bool) async throws -> String
+    func publicRooms() async throws -> [PublicRoomInfo]
+    func joinRoom(roomId: String) async throws
+    func leaveRoom(roomId: String) async throws
+    func roomMembers(roomId: String) async throws -> [RoomMemberInfo]
+    func inviteUser(roomId: String, userId: String) async throws
+    func sendMessage(roomId: String, body: String) async throws
+    func sendReply(roomId: String, eventId: String, body: String) async throws
+    func editMessage(roomId: String, eventId: String, newBody: String) async throws
+    func redactMessage(roomId: String, eventId: String) async throws
+    func sendReadReceipt(roomId: String, eventId: String) async throws
+    func messages(roomId: String, limit: UInt64, from: String?) async throws -> MessageBatch
+    func loginMethods() async throws -> LoginMethods
+    func ssoLoginUrl(redirectUrl: String, idpId: String?) async throws -> String
+    func loginSsoCallback(callbackUrl: String) async throws -> SessionInfo
+    func startSync(listener: ParlotteSyncListener) throws
+    func stopSync()
+    var isSyncing: Bool { get }
+}
+
+extension MatrixClient: MatrixClientProtocol {}

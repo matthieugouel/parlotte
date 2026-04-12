@@ -1,5 +1,6 @@
-import SwiftUI
+import ParlotteLib
 import ParlotteSDK
+import SwiftUI
 
 struct ExploreRoomsView: View {
     @Environment(AppState.self) private var appState

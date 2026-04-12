@@ -44,6 +44,10 @@ macOS app (macOS 14+), with iOS (17+) planned. SwiftUI only — no UIKit, no App
 Structure:
 - `apple/ParlotteSDK/` — Swift package with 3 targets: `RustFramework` (static lib), `ParlotteFFI` (UniFFI-generated Swift), `ParlotteSDK` (hand-written async actor wrapper)
 - `apple/Parlotte/` — SwiftUI app package, depends on ParlotteSDK
+  - `Sources/ParlotteLib/` — Library target with AppState and models (testable)
+  - `Sources/ParlotteApp/` — Executable target with @main entry point and views
+  - `Sources/TestRunner/` — Executable test runner (works without Xcode)
+  - `Tests/` — Swift Testing test suite for AppState state management
 - `scripts/build-apple.sh` — Builds Rust static lib, generates Swift bindings, copies to ParlotteSDK
 
 ## Development Commands
@@ -72,6 +76,9 @@ cd apple/Parlotte && swift run Parlotte --profile alice
 
 # Run with debug logging from the Rust core
 cd apple/Parlotte && swift run Parlotte --debug
+
+# Run Swift state management tests (no Xcode required)
+cd apple/Parlotte && swift run TestRunner
 ```
 
 ## Testing Philosophy
@@ -81,8 +88,10 @@ cd apple/Parlotte && swift run Parlotte --debug
 - Input validation (invalid room IDs, user IDs, URLs produce the right `ParlotteError` variant)
 - Error mapping (`From` impls convert SDK errors into our error types correctly)
 - Type construction and invariants
-- State management (sync manager lifecycle)
+- State management (sync manager lifecycle, optimistic UI updates)
 - Event listener registration
+
+**Swift state management tests** (`swift run TestRunner` from `apple/Parlotte`): Test AppState optimistic updates, failure revert, placeholder lifecycle, dedup, and room selection. Uses `MockMatrixClient` with `MatrixClientProtocol` for dependency injection. Uses Swift Testing framework (`import Testing`), not XCTest.
 
 **Unit tests** (`cargo test -p parlotte-core`): Fast, no external dependencies. Embedded in each source file under `#[cfg(test)]`.
 
