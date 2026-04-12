@@ -8,7 +8,7 @@ use matrix_sdk::{Client, SessionMeta, SessionTokens};
 use std::sync::Arc;
 
 use crate::error::{ParlotteError, Result};
-use crate::message::{LoginMethods, MatrixSessionData, MessageInfo, SessionInfo, SsoProvider};
+use crate::message::{LoginMethods, MatrixSessionData, MessageBatch, MessageInfo, SessionInfo, SsoProvider};
 use crate::room::{PublicRoomInfo, RoomInfo, RoomMemberInfo};
 use crate::sync::{SyncListener, SyncManager};
 
@@ -335,7 +335,9 @@ impl ParlotteClient {
     }
 
     /// Get recent messages from a room, most recent last.
-    pub fn messages(&self, room_id: &str, limit: u64) -> Result<Vec<MessageInfo>> {
+    /// Pass `from` as `None` to fetch the latest messages, or provide a pagination
+    /// token from a previous `MessageBatch::end_token` to load older history.
+    pub fn messages(&self, room_id: &str, limit: u64, from: Option<&str>) -> Result<MessageBatch> {
         let client = self.client();
         self.runtime.block_on(async {
             let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
@@ -350,6 +352,9 @@ impl ParlotteClient {
 
             let mut options = MessagesOptions::backward();
             options.limit = matrix_sdk::ruma::UInt::new(limit).unwrap_or(matrix_sdk::ruma::UInt::MAX);
+            if let Some(token) = from {
+                options.from = Some(token.to_owned());
+            }
 
             let response = room.messages(options).await.map_err(|e| ParlotteError::Room {
                 message: format!("failed to fetch messages: {e}"),
@@ -414,7 +419,10 @@ impl ParlotteClient {
 
             // Reverse so oldest is first, newest last
             messages.reverse();
-            Ok(messages)
+            Ok(MessageBatch {
+                messages,
+                end_token: response.end,
+            })
         })
     }
 
@@ -863,7 +871,7 @@ mod tests {
     #[test]
     fn messages_rejects_invalid_room_id() {
         let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
-        let result = client.messages("not-a-room-id", 50);
+        let result = client.messages("not-a-room-id", 50, None);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
     }
@@ -871,7 +879,7 @@ mod tests {
     #[test]
     fn messages_rejects_nonexistent_room() {
         let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
-        let result = client.messages("!nonexistent:example.com", 50);
+        let result = client.messages("!nonexistent:example.com", 50, None);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, ParlotteError::Room { .. }));

@@ -17,7 +17,8 @@ pub fn init_logging(level: String) {
 
 use parlotte_core::{
     LoginMethods as CoreLoginMethods, MatrixSessionData as CoreMatrixSessionData,
-    MessageInfo as CoreMessageInfo, ParlotteClient as CoreClient, ParlotteError as CoreError,
+    MessageBatch as CoreMessageBatch, MessageInfo as CoreMessageInfo,
+    ParlotteClient as CoreClient, ParlotteError as CoreError,
     PublicRoomInfo as CorePublicRoomInfo, RoomInfo as CoreRoomInfo,
     RoomMemberInfo as CoreRoomMemberInfo, SessionInfo as CoreSessionInfo,
     SsoProvider as CoreSsoProvider,
@@ -111,6 +112,21 @@ impl From<CoreMessageInfo> for MessageInfo {
             message_type: m.message_type,
             timestamp_ms: m.timestamp_ms,
             is_edited: m.is_edited,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct MessageBatch {
+    pub messages: Vec<MessageInfo>,
+    pub end_token: Option<String>,
+}
+
+impl From<CoreMessageBatch> for MessageBatch {
+    fn from(b: CoreMessageBatch) -> Self {
+        Self {
+            messages: b.messages.into_iter().map(Into::into).collect(),
+            end_token: b.end_token,
         }
     }
 }
@@ -292,8 +308,8 @@ impl ParlotteClientFFI {
         Ok(self.inner.send_message(&room_id, &body)?)
     }
 
-    pub fn messages(&self, room_id: String, limit: u64) -> Result<Vec<MessageInfo>, ParlotteError> {
-        Ok(self.inner.messages(&room_id, limit)?.into_iter().map(Into::into).collect())
+    pub fn messages(&self, room_id: String, limit: u64, from: Option<String>) -> Result<MessageBatch, ParlotteError> {
+        Ok(self.inner.messages(&room_id, limit, from.as_deref())?.into())
     }
 
     pub fn sync_once(&self) -> Result<(), ParlotteError> {

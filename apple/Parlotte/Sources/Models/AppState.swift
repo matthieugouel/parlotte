@@ -18,6 +18,8 @@ final class AppState {
     var selectedRoomId: String? {
         didSet {
             messages = []
+            messageEndToken = nil
+            hasMoreMessages = false
             if let roomId = selectedRoomId {
                 // Optimistically clear unread count immediately
                 if let idx = rooms.firstIndex(where: { $0.id == roomId }) {
@@ -31,6 +33,9 @@ final class AppState {
         }
     }
     var messages: [MessageInfo] = []
+    var hasMoreMessages = false
+    var isLoadingMoreMessages = false
+    private var messageEndToken: String?
 
     var homeserverURL = "http://localhost:8008"
     var username = ""
@@ -184,18 +189,24 @@ final class AppState {
         clearStore()
     }
 
-    func refreshRooms() async {
-        guard let client else { return }
+    /// Refresh the room list. Returns true if the selected room has new unread messages.
+    @discardableResult
+    func refreshRooms() async -> Bool {
+        guard let client else { return false }
         do {
             var updated = try await client.rooms()
-            // Clear unread count for the room the user is currently viewing
+            // Check if the selected room has new messages before zeroing
+            var hasNewMessages = false
             if let selected = selectedRoomId,
                let idx = updated.firstIndex(where: { $0.id == selected }) {
+                hasNewMessages = updated[idx].unreadCount > 0
                 updated[idx].unreadCount = 0
             }
             rooms = updated
+            return hasNewMessages
         } catch {
             errorMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -205,10 +216,52 @@ final class AppState {
             return
         }
         do {
-            messages = try await client.messages(roomId: roomId)
+            let batch = try await client.messages(roomId: roomId)
+            messages = batch.messages
+            messageEndToken = batch.endToken
+            hasMoreMessages = batch.endToken != nil
         } catch {
             // Non-fatal — messages may not be available yet
         }
+    }
+
+    /// Called on sync — appends only genuinely new messages without re-fetching the full batch.
+    func appendNewMessages() async {
+        guard let client, let roomId = selectedRoomId, !messages.isEmpty else { return }
+        do {
+            let batch = try await client.messages(roomId: roomId, limit: 5)
+            let existingIds = Set(messages.map(\.eventId))
+            let newMessages = batch.messages.filter { !existingIds.contains($0.eventId) }
+            if !newMessages.isEmpty {
+                messages.append(contentsOf: newMessages)
+                await sendReadReceiptForLatestMessage()
+            }
+        } catch {
+            // Non-fatal
+        }
+    }
+
+    func loadMoreMessages() async {
+        guard let client, let roomId = selectedRoomId,
+              let token = messageEndToken, !isLoadingMoreMessages else { return }
+
+        isLoadingMoreMessages = true
+        do {
+            let batch = try await client.messages(roomId: roomId, from: token)
+            let existingIds = Set(messages.map(\.eventId))
+            let deduped = batch.messages.filter { !existingIds.contains($0.eventId) }
+            if deduped.isEmpty {
+                hasMoreMessages = false
+                messageEndToken = nil
+            } else {
+                messages.insert(contentsOf: deduped, at: 0)
+                messageEndToken = batch.endToken
+                hasMoreMessages = batch.endToken != nil
+            }
+        } catch {
+            // Non-fatal
+        }
+        isLoadingMoreMessages = false
     }
 
     func sendMessage(body: String) async {
@@ -408,9 +461,10 @@ private final class SyncUpdateHandler: ParlotteSyncListener, @unchecked Sendable
     func onSyncUpdate() {
         Task { @MainActor [weak appState] in
             guard let appState else { return }
-            await appState.refreshRooms()
-            await appState.refreshMessages()
-            await appState.sendReadReceiptForLatestMessage()
+            let hasNew = await appState.refreshRooms()
+            if hasNew {
+                await appState.appendNewMessages()
+            }
         }
     }
 }

@@ -27,7 +27,7 @@
 ## Messaging
 - [x] Send and receive text messages
 - [x] Message history
-- [ ] Message pagination (load older messages on scroll)
+- [x] Message pagination (load older messages on scroll)
 - [x] Message editing
 - [x] Message deletion
 - [ ] Reply to messages

@@ -1,9 +1,9 @@
-// swift-tools-version: 5.10
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
     name: "Parlotte",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v15)],
     dependencies: [
         .package(path: "../ParlotteSDK"),
     ],
@@ -15,7 +15,7 @@ let package = Package(
             ],
             path: "Sources",
             swiftSettings: [
-                .enableExperimentalFeature("StrictConcurrency"),
+                .swiftLanguageMode(.v5),
             ]
         ),
     ]

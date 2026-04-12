@@ -203,8 +203,8 @@ mod tests {
         assert!(bob_rooms.iter().any(|r| r.id == room_id));
 
         // Verify Alice's message is visible to both users
-        let alice_msgs = alice.messages(&room_id, 50).unwrap();
-        let bob_msgs = bob.messages(&room_id, 50).unwrap();
+        let alice_msgs = alice.messages(&room_id, 50, None).unwrap().messages;
+        let bob_msgs = bob.messages(&room_id, 50, None).unwrap().messages;
 
         assert!(
             alice_msgs.iter().any(|m| m.body == "Hello Bob!"),
@@ -247,8 +247,8 @@ mod tests {
         bob.sync_once().unwrap();
 
         // Both should see all three messages
-        let alice_msgs = alice.messages(&room_id, 50).unwrap();
-        let bob_msgs = bob.messages(&room_id, 50).unwrap();
+        let alice_msgs = alice.messages(&room_id, 50, None).unwrap().messages;
+        let bob_msgs = bob.messages(&room_id, 50, None).unwrap().messages;
 
         let expected = ["Hey Bob, how are you?", "I'm good Alice! You?", "Great, thanks!"];
         for body in &expected {
@@ -432,13 +432,13 @@ mod tests {
         alice.send_message(&room_id, "Original message").unwrap();
         alice.sync_once().unwrap();
 
-        let msgs = alice.messages(&room_id, 50).unwrap();
+        let msgs = alice.messages(&room_id, 50, None).unwrap().messages;
         let event_id = &msgs.iter().find(|m| m.body == "Original message").unwrap().event_id;
 
         alice.edit_message(&room_id, event_id, "Edited message").unwrap();
         alice.sync_once().unwrap();
 
-        let msgs = alice.messages(&room_id, 50).unwrap();
+        let msgs = alice.messages(&room_id, 50, None).unwrap().messages;
         let edited = msgs.iter().find(|m| m.event_id == *event_id).unwrap();
         assert_eq!(edited.body, "Edited message");
         assert!(edited.is_edited, "Message should be marked as edited");
@@ -457,14 +457,14 @@ mod tests {
         alice.send_message(&room_id, "Delete me").unwrap();
         alice.sync_once().unwrap();
 
-        let msgs = alice.messages(&room_id, 50).unwrap();
+        let msgs = alice.messages(&room_id, 50, None).unwrap().messages;
         assert!(msgs.iter().any(|m| m.body == "Delete me"));
         let event_id = &msgs.iter().find(|m| m.body == "Delete me").unwrap().event_id;
 
         alice.redact_message(&room_id, event_id).unwrap();
         alice.sync_once().unwrap();
 
-        let msgs = alice.messages(&room_id, 50).unwrap();
+        let msgs = alice.messages(&room_id, 50, None).unwrap().messages;
         assert!(
             !msgs.iter().any(|m| m.body == "Delete me"),
             "Redacted message should not appear"
@@ -499,7 +499,7 @@ mod tests {
         assert!(room.unread_count > 0, "Bob should have unread notifications");
 
         // Bob reads the messages and sends a read receipt
-        let bob_msgs = bob.messages(&room_id, 50).unwrap();
+        let bob_msgs = bob.messages(&room_id, 50, None).unwrap().messages;
         let last_event_id = &bob_msgs.last().unwrap().event_id;
         bob.send_read_receipt(&room_id, last_event_id).unwrap();
         bob.sync_once().unwrap();
@@ -544,7 +544,74 @@ mod tests {
         alice.send_message(&room_id, "Welcome!").unwrap();
         bob.sync_once().unwrap();
 
-        let msgs = bob.messages(&room_id, 50).unwrap();
+        let msgs = bob.messages(&room_id, 50, None).unwrap().messages;
         assert!(msgs.iter().any(|m| m.body == "Welcome!"));
+    }
+
+    #[test]
+    fn message_pagination() {
+        require_synapse();
+        let (alice, _) = register_and_login("page_alice");
+
+        let room_id = alice.create_room("Pagination Test", false).unwrap();
+        alice.sync_once().unwrap();
+
+        // Send 8 messages
+        for i in 1..=8 {
+            alice
+                .send_message(&room_id, &format!("msg-{i}"))
+                .unwrap();
+        }
+        alice.sync_once().unwrap();
+
+        // Fetch first batch (limit 3) — should get the 3 most recent (6, 7, 8)
+        let batch1 = alice.messages(&room_id, 3, None).unwrap();
+        assert_eq!(batch1.messages.len(), 3);
+        // Messages should be oldest-first within the batch
+        assert_eq!(batch1.messages[0].body, "msg-6");
+        assert_eq!(batch1.messages[1].body, "msg-7");
+        assert_eq!(batch1.messages[2].body, "msg-8");
+        assert!(
+            batch1.end_token.is_some(),
+            "Should have a pagination token for more messages"
+        );
+
+        // Verify chronological order (timestamps non-decreasing)
+        for w in batch1.messages.windows(2) {
+            assert!(
+                w[0].timestamp_ms <= w[1].timestamp_ms,
+                "Messages should be in chronological order"
+            );
+        }
+
+        // Fetch second batch using the pagination token
+        let batch2 = alice
+            .messages(&room_id, 3, batch1.end_token.as_deref())
+            .unwrap();
+        assert_eq!(batch2.messages.len(), 3);
+        assert_eq!(batch2.messages[0].body, "msg-3");
+        assert_eq!(batch2.messages[1].body, "msg-4");
+        assert_eq!(batch2.messages[2].body, "msg-5");
+
+        // Second batch should be older than first batch
+        assert!(
+            batch2.messages.last().unwrap().timestamp_ms
+                <= batch1.messages.first().unwrap().timestamp_ms,
+            "Second batch should be older than first batch"
+        );
+
+        // Fetch third batch
+        let batch3 = alice
+            .messages(&room_id, 3, batch2.end_token.as_deref())
+            .unwrap();
+        // Should get remaining messages (msg-1, msg-2, and possibly room creation event)
+        assert!(
+            batch3.messages.iter().any(|m| m.body == "msg-1"),
+            "Third batch should contain msg-1"
+        );
+        assert!(
+            batch3.messages.iter().any(|m| m.body == "msg-2"),
+            "Third batch should contain msg-2"
+        );
     }
 }

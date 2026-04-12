@@ -9,5 +9,5 @@ pub mod sync;
 pub use client::ParlotteClient;
 pub use sync::SyncListener;
 pub use error::ParlotteError;
-pub use message::{LoginMethods, MatrixSessionData, MessageInfo, SessionInfo, SsoProvider};
+pub use message::{LoginMethods, MatrixSessionData, MessageBatch, MessageInfo, SessionInfo, SsoProvider};
 pub use room::{PublicRoomInfo, RoomInfo, RoomMemberInfo};

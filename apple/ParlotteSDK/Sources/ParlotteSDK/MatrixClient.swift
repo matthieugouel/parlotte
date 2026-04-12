@@ -119,10 +119,10 @@ public actor MatrixClient {
         }.value
     }
 
-    public func messages(roomId: String, limit: UInt64 = 50) async throws -> [MessageInfo] {
+    public func messages(roomId: String, limit: UInt64 = 50, from: String? = nil) async throws -> MessageBatch {
         let ffi = self.ffi
         return try await Task.detached {
-            try ffi.messages(roomId: roomId, limit: limit)
+            try ffi.messages(roomId: roomId, limit: limit, from: from)
         }.value
     }
 

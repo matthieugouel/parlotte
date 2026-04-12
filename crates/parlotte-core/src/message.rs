@@ -17,6 +17,15 @@ pub struct MessageInfo {
     pub is_edited: bool,
 }
 
+/// A batch of messages with a pagination token for loading more.
+#[derive(Debug, Clone)]
+pub struct MessageBatch {
+    /// The messages in this batch (oldest first).
+    pub messages: Vec<MessageInfo>,
+    /// Opaque token to fetch the next (older) batch. None if no more history.
+    pub end_token: Option<String>,
+}
+
 /// An SSO identity provider offered by the homeserver.
 #[derive(Debug, Clone)]
 pub struct SsoProvider {

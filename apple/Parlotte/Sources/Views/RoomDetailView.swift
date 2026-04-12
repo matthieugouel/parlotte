@@ -118,34 +118,7 @@ struct RoomDetailView: View {
             Divider()
 
             // Message list
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 6) {
-                        ForEach(appState.messages, id: \.eventId) { message in
-                            MessageBubble(
-                                message: message,
-                                isOwnMessage: message.sender == appState.loggedInUserId,
-                                onEdit: { newBody in
-                                    Task { await appState.editMessage(eventId: message.eventId, newBody: newBody) }
-                                },
-                                onDelete: {
-                                    Task { await appState.deleteMessage(eventId: message.eventId) }
-                                }
-                            )
-                            .id(message.eventId)
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 10)
-                }
-                .onChange(of: appState.messages.count) { _, _ in
-                    if let last = appState.messages.last {
-                        withAnimation {
-                            proxy.scrollTo(last.eventId, anchor: .bottom)
-                        }
-                    }
-                }
-            }
+            messageList
 
             Divider()
 
@@ -198,6 +171,65 @@ struct RoomDetailView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Are you sure you want to leave this room?")
+        }
+    }
+
+    private var messageList: some View {
+        MessageScrollView(
+            itemCount: appState.messages.count,
+            lastItemId: appState.messages.last?.eventId,
+            isLoadingOlder: appState.isLoadingMoreMessages,
+            onScrollToTop: {
+                if appState.hasMoreMessages && !appState.isLoadingMoreMessages {
+                    Task { await appState.loadMoreMessages() }
+                }
+            }
+        ) {
+            VStack(alignment: .leading, spacing: 6) {
+                if appState.hasMoreMessages {
+                    HStack {
+                        Spacer()
+                        if appState.isLoadingMoreMessages {
+                            ProgressView("Loading older messages...")
+                                .controlSize(.small)
+                        } else {
+                            Button("Load older messages") {
+                                Task { await appState.loadMoreMessages() }
+                            }
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .buttonStyle(.plain)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                }
+
+                ForEach(Array(appState.messages.enumerated()), id: \.element.eventId) { index, message in
+                    if index == 0 {
+                        DateSeparator(timestamp: message.timestampMs)
+                    } else {
+                        let prevDate = Self.calendarDay(appState.messages[index - 1].timestampMs)
+                        let thisDate = Self.calendarDay(message.timestampMs)
+                        if prevDate != thisDate {
+                            DateSeparator(timestamp: message.timestampMs)
+                        }
+                    }
+
+                    MessageBubble(
+                        message: message,
+                        isOwnMessage: message.sender == appState.loggedInUserId,
+                        onEdit: { newBody in
+                            Task { await appState.editMessage(eventId: message.eventId, newBody: newBody) }
+                        },
+                        onDelete: {
+                            Task { await appState.deleteMessage(eventId: message.eventId) }
+                        }
+                    )
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 10)
         }
     }
 
@@ -383,5 +415,48 @@ struct MessageBubble: View {
         formatter.dateStyle = .none
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+}
+
+// MARK: - Date Separator
+
+private struct DateSeparator: View {
+    let timestamp: UInt64
+
+    var body: some View {
+        HStack {
+            VStack { Divider() }
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .layoutPriority(1)
+            VStack { Divider() }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var label: String {
+        let date = Date(timeIntervalSince1970: Double(timestamp) / 1000.0)
+        let calendar = Calendar.current
+
+        if calendar.isDateInToday(date) {
+            return "Today"
+        } else if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .none
+            return formatter.string(from: date)
+        }
+    }
+}
+
+// MARK: - Helpers
+
+extension RoomDetailView {
+    static func calendarDay(_ timestampMs: UInt64) -> DateComponents {
+        let date = Date(timeIntervalSince1970: Double(timestampMs) / 1000.0)
+        return Calendar.current.dateComponents([.year, .month, .day], from: date)
     }
 }
