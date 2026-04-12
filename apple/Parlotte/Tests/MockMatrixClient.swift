@@ -3,6 +3,9 @@ import ParlotteSDK
 
 /// A mock MatrixClient for unit testing AppState state transitions.
 /// Methods record calls and return configurable results.
+///
+/// Error injection: set per-method error properties (e.g. `sendMessageError`)
+/// for targeted failures, or set `shouldThrow` as a catch-all for any method.
 final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     // MARK: - Call tracking
 
@@ -12,49 +15,81 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var redactMessageCalls: [(roomId: String, eventId: String)] = []
     var sendReadReceiptCalls: [(roomId: String, eventId: String)] = []
     var messagesCalls: [(roomId: String, limit: UInt64, from: String?)] = []
+    var leaveRoomCalls: [String] = []
+    var stopSyncCalls = 0
+    var logoutCalls = 0
 
     // MARK: - Configurable behavior
 
     var messagesResult: MessageBatch = MessageBatch(messages: [], endToken: nil)
     var roomsResult: [RoomInfo] = []
+
+    /// Catch-all error — thrown by any method if its per-method error is nil.
     var shouldThrow: Error?
+
+    /// Per-method errors — take precedence over shouldThrow.
+    var sendMessageError: Error?
+    var sendReplyError: Error?
+    var editMessageError: Error?
+    var redactMessageError: Error?
+    var sendReadReceiptError: Error?
+    var messagesError: Error?
+    var roomsError: Error?
+    var leaveRoomError: Error?
+
+    private func errorFor(_ specific: Error?) throws {
+        if let err = specific ?? shouldThrow { throw err }
+    }
 
     // MARK: - MatrixClientProtocol
 
     func sendMessage(roomId: String, body: String) async throws {
-        if let err = shouldThrow { throw err }
+        try errorFor(sendMessageError)
         sendMessageCalls.append((roomId, body))
     }
 
     func sendReply(roomId: String, eventId: String, body: String) async throws {
-        if let err = shouldThrow { throw err }
+        try errorFor(sendReplyError)
         sendReplyCalls.append((roomId, eventId, body))
     }
 
     func editMessage(roomId: String, eventId: String, newBody: String) async throws {
-        if let err = shouldThrow { throw err }
+        try errorFor(editMessageError)
         editMessageCalls.append((roomId, eventId, newBody))
     }
 
     func redactMessage(roomId: String, eventId: String) async throws {
-        if let err = shouldThrow { throw err }
+        try errorFor(redactMessageError)
         redactMessageCalls.append((roomId, eventId))
     }
 
     func sendReadReceipt(roomId: String, eventId: String) async throws {
-        if let err = shouldThrow { throw err }
+        try errorFor(sendReadReceiptError)
         sendReadReceiptCalls.append((roomId, eventId))
     }
 
     func messages(roomId: String, limit: UInt64, from: String?) async throws -> MessageBatch {
-        if let err = shouldThrow { throw err }
+        try errorFor(messagesError)
         messagesCalls.append((roomId, limit, from))
         return messagesResult
     }
 
     func rooms() async throws -> [RoomInfo] {
-        if let err = shouldThrow { throw err }
+        try errorFor(roomsError)
         return roomsResult
+    }
+
+    func leaveRoom(roomId: String) async throws {
+        try errorFor(leaveRoomError)
+        leaveRoomCalls.append(roomId)
+    }
+
+    func logout() async throws {
+        logoutCalls += 1
+    }
+
+    func stopSync() {
+        stopSyncCalls += 1
     }
 
     // MARK: - Stubs (not needed for state management tests)
@@ -65,12 +100,10 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
 
     func session() async -> MatrixSessionData? { nil }
     func restoreSession(_ sessionData: MatrixSessionData) async throws {}
-    func logout() async throws {}
     func syncOnce() async throws {}
     func createRoom(name: String, isPublic: Bool) async throws -> String { "!new:example.com" }
     func publicRooms() async throws -> [PublicRoomInfo] { [] }
     func joinRoom(roomId: String) async throws {}
-    func leaveRoom(roomId: String) async throws {}
     func roomMembers(roomId: String) async throws -> [RoomMemberInfo] { [] }
     func inviteUser(roomId: String, userId: String) async throws {}
     func loginMethods() async throws -> LoginMethods {
@@ -81,6 +114,5 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
         SessionInfo(userId: "@test:example.com", deviceId: "TESTDEV")
     }
     func startSync(listener: ParlotteSyncListener) throws {}
-    func stopSync() {}
     var isSyncing: Bool { false }
 }

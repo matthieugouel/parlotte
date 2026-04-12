@@ -613,4 +613,68 @@ mod tests {
             "Third batch should contain msg-2"
         );
     }
+
+    // -- Test: Reply to a message --
+
+    #[test]
+    fn reply_to_message() {
+        require_synapse();
+        let (alice, _alice_id) = register_and_login("reply_alice");
+        let (bob, bob_id) = register_and_login("reply_bob");
+
+        // Alice creates a room and invites Bob
+        let room_id = alice.create_room("Reply Test", false).unwrap();
+        alice.sync_once().unwrap();
+        alice.invite_user(&room_id, &bob_id).unwrap();
+        bob.sync_once().unwrap();
+        bob.join_room(&room_id).unwrap();
+        alice.sync_once().unwrap();
+        bob.sync_once().unwrap();
+
+        // Alice sends the original message
+        alice.send_message(&room_id, "Original message").unwrap();
+        alice.sync_once().unwrap();
+        bob.sync_once().unwrap();
+
+        // Bob finds the original message's event ID
+        let bob_msgs = bob.messages(&room_id, 50, None).unwrap().messages;
+        let original = bob_msgs
+            .iter()
+            .find(|m| m.body == "Original message")
+            .expect("Bob should see Alice's original message");
+        let original_event_id = original.event_id.clone();
+        assert!(
+            original.replied_to_event_id.is_none(),
+            "Original message should not be a reply"
+        );
+
+        // Bob replies to Alice's message
+        bob.send_reply(&room_id, &original_event_id, "This is a reply")
+            .unwrap();
+        alice.sync_once().unwrap();
+        bob.sync_once().unwrap();
+
+        // Both users should see the reply with the correct replied_to_event_id
+        let alice_msgs = alice.messages(&room_id, 50, None).unwrap().messages;
+        let alice_reply = alice_msgs
+            .iter()
+            .find(|m| m.body == "This is a reply")
+            .expect("Alice should see Bob's reply");
+        assert_eq!(
+            alice_reply.replied_to_event_id.as_deref(),
+            Some(original_event_id.as_str()),
+            "Reply should reference the original message"
+        );
+
+        let bob_msgs = bob.messages(&room_id, 50, None).unwrap().messages;
+        let bob_reply = bob_msgs
+            .iter()
+            .find(|m| m.body == "This is a reply")
+            .expect("Bob should see his own reply");
+        assert_eq!(
+            bob_reply.replied_to_event_id.as_deref(),
+            Some(original_event_id.as_str()),
+            "Reply should reference the original message for Bob too"
+        );
+    }
 }

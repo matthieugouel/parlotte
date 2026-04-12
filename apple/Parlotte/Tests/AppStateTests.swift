@@ -66,7 +66,7 @@ struct AppStateTests {
 
     @Test("Send message removes placeholder on failure")
     mutating func sendMessageRemovesPlaceholderOnFailure() async {
-        mock.shouldThrow = ParlotteError.Room(message: "server error")
+        mock.sendMessageError = ParlotteError.Room(message: "server error")
 
         await appState.sendMessage(body: "Will fail")
 
@@ -112,7 +112,7 @@ struct AppStateTests {
 
     @Test("Send reply removes placeholder on failure")
     mutating func sendReplyRemovesPlaceholderOnFailure() async {
-        mock.shouldThrow = ParlotteError.Room(message: "failed")
+        mock.sendReplyError = ParlotteError.Room(message: "failed")
 
         await appState.sendReply(eventId: "$evt:x.com", body: "Will fail")
 
@@ -147,7 +147,7 @@ struct AppStateTests {
     mutating func editMessageRevertsOnFailure() async {
         let msg = makeMessage(eventId: "$e1:x.com", body: "Original")
         appState.messages = [msg]
-        mock.shouldThrow = ParlotteError.Room(message: "forbidden")
+        mock.editMessageError = ParlotteError.Room(message: "forbidden")
 
         await appState.editMessage(eventId: "$e1:x.com", newBody: "Updated")
 
@@ -195,7 +195,7 @@ struct AppStateTests {
         appState.messages = [
             makeMessage(eventId: "$e1:x.com", body: "Keep me"),
         ]
-        mock.shouldThrow = ParlotteError.Room(message: "forbidden")
+        mock.redactMessageError = ParlotteError.Room(message: "forbidden")
 
         await appState.deleteMessage(eventId: "$e1:x.com")
 
@@ -303,5 +303,121 @@ struct AppStateTests {
         appState.selectedRoomId = nil
 
         #expect(appState.messages.isEmpty)
+    }
+
+    // MARK: - Refresh Rooms
+
+    @Test("Refresh rooms updates room list")
+    mutating func refreshRoomsUpdatesRoomList() async {
+        mock.roomsResult = [
+            RoomInfo(id: "!a:x.com", displayName: "Alpha", isEncrypted: false, isPublic: false, topic: nil, isInvited: false, unreadCount: 0),
+        ]
+
+        await appState.refreshRooms()
+
+        #expect(appState.rooms.count == 1)
+        #expect(appState.rooms[0].displayName == "Alpha")
+    }
+
+    @Test("Refresh rooms zeroes unread count on selected room")
+    mutating func refreshRoomsZeroesUnreadOnSelectedRoom() async {
+        appState.selectedRoomId = "!a:x.com"
+        mock.roomsResult = [
+            RoomInfo(id: "!a:x.com", displayName: "Selected", isEncrypted: false, isPublic: false, topic: nil, isInvited: false, unreadCount: 5),
+            RoomInfo(id: "!b:x.com", displayName: "Other", isEncrypted: false, isPublic: false, topic: nil, isInvited: false, unreadCount: 3),
+        ]
+
+        let hasNew = await appState.refreshRooms()
+
+        #expect(hasNew == true, "Should report new messages in selected room")
+        #expect(appState.rooms[0].unreadCount == 0, "Selected room unread should be zeroed")
+        #expect(appState.rooms[1].unreadCount == 3, "Other room unread should be preserved")
+    }
+
+    @Test("Refresh rooms returns false when no unread in selected room")
+    mutating func refreshRoomsReturnsFalseWhenNoUnread() async {
+        appState.selectedRoomId = "!a:x.com"
+        mock.roomsResult = [
+            RoomInfo(id: "!a:x.com", displayName: "Selected", isEncrypted: false, isPublic: false, topic: nil, isInvited: false, unreadCount: 0),
+        ]
+
+        let hasNew = await appState.refreshRooms()
+
+        #expect(hasNew == false)
+    }
+
+    @Test("Refresh rooms sets error on failure")
+    mutating func refreshRoomsSetsErrorOnFailure() async {
+        mock.roomsError = ParlotteError.Room(message: "forbidden")
+
+        let hasNew = await appState.refreshRooms()
+
+        #expect(hasNew == false)
+        #expect(appState.errorMessage != nil)
+    }
+
+    // MARK: - Leave Room
+
+    @Test("Leave selected room clears selection")
+    mutating func leaveSelectedRoomClearsSelection() async {
+        appState.selectedRoomId = "!room:example.com"
+
+        await appState.leaveRoom(roomId: "!room:example.com")
+
+        #expect(appState.selectedRoomId == nil)
+        #expect(mock.leaveRoomCalls.count == 1)
+    }
+
+    @Test("Leave non-selected room preserves selection")
+    mutating func leaveNonSelectedRoomPreservesSelection() async {
+        appState.selectedRoomId = "!room:example.com"
+
+        await appState.leaveRoom(roomId: "!other:example.com")
+
+        #expect(appState.selectedRoomId == "!room:example.com")
+        #expect(mock.leaveRoomCalls.count == 1)
+    }
+
+    @Test("Leave room sets error on failure")
+    mutating func leaveRoomSetsErrorOnFailure() async {
+        mock.leaveRoomError = ParlotteError.Room(message: "forbidden")
+
+        await appState.leaveRoom(roomId: "!room:example.com")
+
+        #expect(appState.errorMessage != nil)
+        #expect(appState.selectedRoomId == "!room:example.com", "Selection should not change on failure")
+    }
+
+    // MARK: - Logout
+
+    @Test("Logout resets all state")
+    mutating func logoutResetsAllState() async {
+        appState.isLoggedIn = true
+        appState.loggedInUserId = "@alice:example.com"
+        appState.isSyncActive = true
+        appState.rooms = [
+            RoomInfo(id: "!a:x.com", displayName: "Room", isEncrypted: false, isPublic: false, topic: nil, isInvited: false, unreadCount: 0),
+        ]
+        appState.messages = [makeMessage()]
+
+        await appState.logout()
+
+        #expect(appState.isLoggedIn == false)
+        #expect(appState.loggedInUserId == nil)
+        #expect(appState.isSyncActive == false)
+        #expect(appState.rooms.isEmpty)
+        #expect(appState.selectedRoomId == nil)
+        #expect(appState.messages.isEmpty)
+        #expect(appState.client == nil)
+    }
+
+    @Test("Logout stops sync and calls server")
+    mutating func logoutStopsSyncAndCallsServer() async {
+        appState.isSyncActive = true
+
+        await appState.logout()
+
+        #expect(mock.stopSyncCalls == 1)
+        #expect(mock.logoutCalls == 1)
     }
 }
