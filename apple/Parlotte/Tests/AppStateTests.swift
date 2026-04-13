@@ -1224,4 +1224,125 @@ struct AppStateTests {
         _ = await appState.loadMedia(mxcUri: oldMxc)
         #expect(mock.downloadMediaCalls.count == 2, "old mxc should have been evicted")
     }
+
+    // MARK: - Room Settings (name, topic)
+
+    @Test("Update room name applies optimistically and calls client")
+    mutating func updateRoomNameOptimistic() async {
+        let roomId = "!room:example.com"
+        appState.rooms = [
+            RoomInfo(id: roomId, displayName: "Old Name", isEncrypted: false, isPublic: false,
+                     topic: nil, isInvited: false, unreadCount: 0)
+        ]
+
+        await appState.updateRoomName(roomId: roomId, name: "New Name")
+
+        #expect(appState.rooms[0].displayName == "New Name")
+        #expect(mock.setRoomNameCalls.count == 1)
+        #expect(mock.setRoomNameCalls[0].roomId == roomId)
+        #expect(mock.setRoomNameCalls[0].name == "New Name")
+        #expect(appState.isUpdatingRoomSettings == false)
+    }
+
+    @Test("Update room name reverts on failure")
+    mutating func updateRoomNameRevertsOnFailure() async {
+        let roomId = "!room:example.com"
+        appState.rooms = [
+            RoomInfo(id: roomId, displayName: "Old Name", isEncrypted: false, isPublic: false,
+                     topic: nil, isInvited: false, unreadCount: 0)
+        ]
+        mock.setRoomNameError = ParlotteError.Network(message: "nope")
+
+        await appState.updateRoomName(roomId: roomId, name: "New Name")
+
+        #expect(appState.rooms[0].displayName == "Old Name")
+        #expect(appState.errorMessage != nil)
+    }
+
+    @Test("Update room name trims whitespace and ignores empty input")
+    mutating func updateRoomNameIgnoresEmpty() async {
+        let roomId = "!room:example.com"
+        appState.rooms = [
+            RoomInfo(id: roomId, displayName: "Original", isEncrypted: false, isPublic: false,
+                     topic: nil, isInvited: false, unreadCount: 0)
+        ]
+
+        await appState.updateRoomName(roomId: roomId, name: "   ")
+
+        #expect(appState.rooms[0].displayName == "Original")
+        #expect(mock.setRoomNameCalls.isEmpty)
+    }
+
+    @Test("Update room name is a no-op for unknown room")
+    mutating func updateRoomNameUnknownRoom() async {
+        appState.rooms = []
+
+        await appState.updateRoomName(roomId: "!missing:example.com", name: "Whatever")
+
+        #expect(mock.setRoomNameCalls.isEmpty)
+    }
+
+    @Test("Update room topic applies optimistically and calls client")
+    mutating func updateRoomTopicOptimistic() async {
+        let roomId = "!room:example.com"
+        appState.rooms = [
+            RoomInfo(id: roomId, displayName: "R", isEncrypted: false, isPublic: false,
+                     topic: "Old topic", isInvited: false, unreadCount: 0)
+        ]
+
+        await appState.updateRoomTopic(roomId: roomId, topic: "Fresh topic")
+
+        #expect(appState.rooms[0].topic == "Fresh topic")
+        #expect(mock.setRoomTopicCalls.count == 1)
+        #expect(mock.setRoomTopicCalls[0].topic == "Fresh topic")
+    }
+
+    @Test("Update room topic reverts on failure")
+    mutating func updateRoomTopicRevertsOnFailure() async {
+        let roomId = "!room:example.com"
+        appState.rooms = [
+            RoomInfo(id: roomId, displayName: "R", isEncrypted: false, isPublic: false,
+                     topic: "Old topic", isInvited: false, unreadCount: 0)
+        ]
+        mock.setRoomTopicError = ParlotteError.Network(message: "fail")
+
+        await appState.updateRoomTopic(roomId: roomId, topic: "New topic")
+
+        #expect(appState.rooms[0].topic == "Old topic")
+        #expect(appState.errorMessage != nil)
+    }
+
+    @Test("Update room topic with empty string clears the topic")
+    mutating func updateRoomTopicClears() async {
+        let roomId = "!room:example.com"
+        appState.rooms = [
+            RoomInfo(id: roomId, displayName: "R", isEncrypted: false, isPublic: false,
+                     topic: "Stale", isInvited: false, unreadCount: 0)
+        ]
+
+        await appState.updateRoomTopic(roomId: roomId, topic: "")
+
+        #expect(appState.rooms[0].topic == nil)
+        #expect(mock.setRoomTopicCalls.count == 1)
+        #expect(mock.setRoomTopicCalls[0].topic == "")
+    }
+
+    @Test("Room settings changes from sync propagate to rooms list")
+    mutating func roomSettingsPropagateViaSync() async {
+        let roomId = "!room:example.com"
+        appState.rooms = [
+            RoomInfo(id: roomId, displayName: "Before", isEncrypted: false, isPublic: false,
+                     topic: "Before topic", isInvited: false, unreadCount: 0)
+        ]
+        // Simulate the server reflecting a rename + topic change in the next sync.
+        mock.roomsResult = [
+            RoomInfo(id: roomId, displayName: "After", isEncrypted: false, isPublic: false,
+                     topic: "After topic", isInvited: false, unreadCount: 0)
+        ]
+
+        await appState.handleSyncUpdate()
+
+        #expect(appState.rooms[0].displayName == "After")
+        #expect(appState.rooms[0].topic == "After topic")
+    }
 }

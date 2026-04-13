@@ -34,6 +34,8 @@ public protocol MatrixClientProtocol: Sendable {
     func setDisplayName(name: String) async throws
     func setAvatar(mimeType: String, data: Data) async throws -> String
     func removeAvatar() async throws
+    func setRoomName(roomId: String, name: String) async throws
+    func setRoomTopic(roomId: String, topic: String) async throws
     func startSync(listener: ParlotteSyncListener) throws
     func stopSync()
     var isSyncing: Bool { get }

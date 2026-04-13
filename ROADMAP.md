@@ -19,7 +19,7 @@
 - [x] Accept invites
 - [x] Leave room
 - [x] Room member list
-- [ ] Room settings (name, topic)
+- [x] Room settings (name, topic)
 - [ ] Room avatars
 - [ ] Admin actions (kick, ban, change power levels)
 - [ ] Delete / tombstone rooms
@@ -44,6 +44,7 @@
 - [x] User profile (display name, avatar)
 - [x] Light & dark mode
 - [ ] Search (messages, rooms)
+- [ ] Polish UI/UX
 
 ## Security
 - [x] Legacy SSO login (browser-based, works with most Synapse servers)

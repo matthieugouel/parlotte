@@ -679,6 +679,57 @@ public final class AppState {
         typingUsers[roomId] = others
     }
 
+    /// Tracks whether a room-settings save is in flight. Views can disable their
+    /// save button on this to avoid double-submits.
+    public var isUpdatingRoomSettings = false
+
+    /// Rename the given room. Optimistic update on `rooms`; reverts if the
+    /// server rejects the change.
+    public func updateRoomName(roomId: String, name: String) async {
+        guard let client else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard let idx = rooms.firstIndex(where: { $0.id == roomId }) else { return }
+
+        let oldName = rooms[idx].displayName
+        rooms[idx].displayName = trimmed
+        isUpdatingRoomSettings = true
+
+        do {
+            try await client.setRoomName(roomId: roomId, name: trimmed)
+        } catch {
+            if let idx = rooms.firstIndex(where: { $0.id == roomId }) {
+                rooms[idx].displayName = oldName
+            }
+            errorMessage = error.localizedDescription
+        }
+
+        isUpdatingRoomSettings = false
+    }
+
+    /// Set the topic of the given room. Optimistic update on `rooms`; reverts
+    /// if the server rejects the change. Empty string clears the topic.
+    public func updateRoomTopic(roomId: String, topic: String) async {
+        guard let client else { return }
+        guard let idx = rooms.firstIndex(where: { $0.id == roomId }) else { return }
+
+        let oldTopic = rooms[idx].topic
+        let newTopic = topic.trimmingCharacters(in: .whitespacesAndNewlines)
+        rooms[idx].topic = newTopic.isEmpty ? nil : newTopic
+        isUpdatingRoomSettings = true
+
+        do {
+            try await client.setRoomTopic(roomId: roomId, topic: newTopic)
+        } catch {
+            if let idx = rooms.firstIndex(where: { $0.id == roomId }) {
+                rooms[idx].topic = oldTopic
+            }
+            errorMessage = error.localizedDescription
+        }
+
+        isUpdatingRoomSettings = false
+    }
+
     public func inviteUser(userId: String) async {
         guard let client, let roomId = selectedRoomId else { return }
         do {

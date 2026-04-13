@@ -31,6 +31,8 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var setAvatarCalls: [(mimeType: String, data: Data)] = []
     var removeAvatarCalls = 0
     var roomMembersCalls: [String] = []
+    var setRoomNameCalls: [(roomId: String, name: String)] = []
+    var setRoomTopicCalls: [(roomId: String, topic: String)] = []
 
     // MARK: - Configurable behavior
 
@@ -69,6 +71,8 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var removeAvatarError: Error?
     var roomMembersError: Error?
     var roomMembersResult: [RoomMemberInfo] = []
+    var setRoomNameError: Error?
+    var setRoomTopicError: Error?
 
     private func errorFor(_ specific: Error?) throws {
         if let err = specific ?? shouldThrow { throw err }
@@ -172,6 +176,16 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     func removeAvatar() async throws {
         try errorFor(removeAvatarError)
         removeAvatarCalls += 1
+    }
+
+    func setRoomName(roomId: String, name: String) async throws {
+        try errorFor(setRoomNameError)
+        setRoomNameCalls.append((roomId, name))
+    }
+
+    func setRoomTopic(roomId: String, topic: String) async throws {
+        try errorFor(setRoomTopicError)
+        setRoomTopicCalls.append((roomId, topic))
     }
 
     // MARK: - Stubs (not needed for state management tests)

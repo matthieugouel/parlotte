@@ -900,6 +900,41 @@ mod tests {
     }
 
     #[test]
+    fn room_settings_name_and_topic() {
+        require_synapse();
+        let (alice, _alice_id) = register_and_login("room_settings");
+
+        // Create a room and sync to pick it up.
+        let room_id = alice.create_room("Original Name", false).unwrap();
+        alice.sync_once().unwrap();
+        let rooms = alice.rooms().unwrap();
+        let room = rooms.iter().find(|r| r.id == room_id).unwrap();
+        assert_eq!(room.display_name, "Original Name");
+        assert!(room.topic.is_none());
+
+        // Rename the room.
+        alice.set_room_name(&room_id, "Renamed Room").unwrap();
+        alice.sync_once().unwrap();
+        let rooms = alice.rooms().unwrap();
+        let room = rooms.iter().find(|r| r.id == room_id).unwrap();
+        assert_eq!(room.display_name, "Renamed Room");
+
+        // Set a topic.
+        alice.set_room_topic(&room_id, "A room for testing").unwrap();
+        alice.sync_once().unwrap();
+        let rooms = alice.rooms().unwrap();
+        let room = rooms.iter().find(|r| r.id == room_id).unwrap();
+        assert_eq!(room.topic.as_deref(), Some("A room for testing"));
+
+        // Update the topic.
+        alice.set_room_topic(&room_id, "Updated topic").unwrap();
+        alice.sync_once().unwrap();
+        let rooms = alice.rooms().unwrap();
+        let room = rooms.iter().find(|r| r.id == room_id).unwrap();
+        assert_eq!(room.topic.as_deref(), Some("Updated topic"));
+    }
+
+    #[test]
     fn redact_reaction() {
         require_synapse();
         let (alice, _alice_id) = register_and_login("redact_react_alice");

@@ -231,6 +231,20 @@ public actor MatrixClient {
         }.value
     }
 
+    public func setRoomName(roomId: String, name: String) async throws {
+        let ffi = self.ffi
+        try await Task.detached {
+            try ffi.setRoomName(roomId: roomId, name: name)
+        }.value
+    }
+
+    public func setRoomTopic(roomId: String, topic: String) async throws {
+        let ffi = self.ffi
+        try await Task.detached {
+            try ffi.setRoomTopic(roomId: roomId, topic: topic)
+        }.value
+    }
+
     public nonisolated func startSync(listener: ParlotteSyncListener) throws {
         try ffi.startSync(listener: listener)
     }

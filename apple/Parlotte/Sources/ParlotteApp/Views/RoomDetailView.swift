@@ -11,6 +11,7 @@ struct RoomDetailView: View {
     @State private var inviteUserId = ""
     @State private var showLeaveConfirm = false
     @State private var showMembers = false
+    @State private var showSettings = false
     @State private var replyingTo: MessageInfo?
 
     private var selectedRoom: some View {
@@ -36,6 +37,15 @@ struct RoomDetailView: View {
                         }
 
                         Spacer()
+
+                        Button {
+                            showSettings = true
+                        } label: {
+                            Image(systemName: "gearshape")
+                                .font(.title3)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Room Settings")
 
                         Button {
                             showMembers = true
@@ -225,6 +235,12 @@ struct RoomDetailView: View {
         .sheet(isPresented: $showMembers) {
             if let roomId = appState.selectedRoomId {
                 MemberListView(roomId: roomId)
+                    .environment(appState)
+            }
+        }
+        .sheet(isPresented: $showSettings) {
+            if let roomId = appState.selectedRoomId {
+                RoomSettingsView(roomId: roomId)
                     .environment(appState)
             }
         }

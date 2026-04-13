@@ -466,6 +466,14 @@ impl ParlotteClientFFI {
         Ok(self.inner.remove_avatar()?)
     }
 
+    pub fn set_room_name(&self, room_id: String, name: String) -> Result<(), ParlotteError> {
+        Ok(self.inner.set_room_name(&room_id, &name)?)
+    }
+
+    pub fn set_room_topic(&self, room_id: String, topic: String) -> Result<(), ParlotteError> {
+        Ok(self.inner.set_room_topic(&room_id, &topic)?)
+    }
+
     pub fn start_sync(&self, listener: Box<dyn ParlotteSyncListener>) -> Result<(), ParlotteError> {
         let bridge = Arc::new(SyncListenerBridge { inner: listener });
         Ok(self.inner.start_sync(bridge)?)

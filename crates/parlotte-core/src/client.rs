@@ -728,6 +728,55 @@ impl ParlotteClient {
         })
     }
 
+    /// Set the display name of a room. Requires appropriate power level.
+    pub fn set_room_name(&self, room_id: &str, name: &str) -> Result<()> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid room ID: {e}"),
+            })?;
+
+            let room = client
+                .get_room(room_id)
+                .ok_or_else(|| ParlotteError::Room {
+                    message: format!("room {room_id} not found"),
+                })?;
+
+            room.set_name(name.to_owned())
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to set room name: {e}"),
+                })?;
+
+            Ok(())
+        })
+    }
+
+    /// Set the topic of a room. Pass an empty string to clear it.
+    /// Requires appropriate power level.
+    pub fn set_room_topic(&self, room_id: &str, topic: &str) -> Result<()> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid room ID: {e}"),
+            })?;
+
+            let room = client
+                .get_room(room_id)
+                .ok_or_else(|| ParlotteError::Room {
+                    message: format!("room {room_id} not found"),
+                })?;
+
+            room.set_room_topic(topic)
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to set room topic: {e}"),
+                })?;
+
+            Ok(())
+        })
+    }
+
     /// Perform a single sync cycle. Useful for tests and initial sync.
     pub fn sync_once(&self) -> Result<()> {
         tracing::debug!("sync_once starting");
@@ -1392,6 +1441,42 @@ mod tests {
     fn leave_room_rejects_nonexistent_room() {
         let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
         let result = client.leave_room("!nonexistent:example.com");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ParlotteError::Room { .. }));
+        assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn set_room_name_rejects_invalid_room_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.set_room_name("garbage", "New Name");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
+    }
+
+    #[test]
+    fn set_room_name_rejects_nonexistent_room() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.set_room_name("!nonexistent:example.com", "New Name");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ParlotteError::Room { .. }));
+        assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn set_room_topic_rejects_invalid_room_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.set_room_topic("garbage", "New topic");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
+    }
+
+    #[test]
+    fn set_room_topic_rejects_nonexistent_room() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.set_room_topic("!nonexistent:example.com", "Topic");
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, ParlotteError::Room { .. }));
