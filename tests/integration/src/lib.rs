@@ -744,4 +744,75 @@ mod tests {
             "Bob should have received a typing update showing Alice is typing"
         );
     }
+
+    // -- Test: Attachment upload + download round-trip --
+
+    /// Build the smallest valid PNG (1x1 transparent pixel).
+    /// Used to verify the attachment round-trip without needing real image data.
+    fn tiny_png() -> Vec<u8> {
+        vec![
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // 1x1
+            0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89,
+            0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, // IDAT chunk
+            0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01,
+            0x0D, 0x0A, 0x2D, 0xB4,
+            0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, // IEND chunk
+            0xAE, 0x42, 0x60, 0x82,
+        ]
+    }
+
+    #[test]
+    fn attachment_upload_and_download() {
+        require_synapse();
+        let (alice, _alice_id) = register_and_login("attach_alice");
+        let (bob, bob_id) = register_and_login("attach_bob");
+
+        // Alice creates a room and invites Bob (public, unencrypted to keep it simple).
+        let room_id = alice.create_room("Media Room", true).unwrap();
+        alice.sync_once().unwrap();
+        alice.invite_user(&room_id, &bob_id).unwrap();
+
+        bob.sync_once().unwrap();
+        bob.join_room(&room_id).unwrap();
+
+        alice.sync_once().unwrap();
+        bob.sync_once().unwrap();
+
+        // Alice sends a PNG attachment.
+        let payload = tiny_png();
+        alice
+            .send_attachment(&room_id, "pixel.png", "image/png", payload.clone(), Some(1), Some(1))
+            .expect("alice failed to send attachment");
+
+        alice.sync_once().unwrap();
+        bob.sync_once().unwrap();
+
+        // Bob should see the image event with a media_source mxc URI.
+        let bob_msgs = bob.messages(&room_id, 50, None).unwrap().messages;
+        let image_msg = bob_msgs
+            .iter()
+            .find(|m| m.message_type == "image")
+            .expect("Bob should see the image message");
+
+        assert_eq!(image_msg.body, "pixel.png");
+        assert_eq!(image_msg.media_mime_type.as_deref(), Some("image/png"));
+        let media_source = image_msg
+            .media_source
+            .as_deref()
+            .expect("image message should carry media_source");
+        // media_source is JSON-serialised MediaSource; it should contain an mxc URI
+        assert!(
+            media_source.contains("mxc://"),
+            "expected mxc:// inside media_source, got {media_source}"
+        );
+
+        // Bob downloads the media and verifies bytes match Alice's payload.
+        let downloaded = bob.download_media(media_source).expect("download_media failed");
+        assert_eq!(
+            downloaded, payload,
+            "downloaded bytes should match what Alice uploaded"
+        );
+    }
 }

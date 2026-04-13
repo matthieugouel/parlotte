@@ -133,6 +133,34 @@ public actor MatrixClient {
         }.value
     }
 
+    public func sendAttachment(
+        roomId: String,
+        filename: String,
+        mimeType: String,
+        data: Data,
+        width: UInt32? = nil,
+        height: UInt32? = nil
+    ) async throws {
+        let ffi = self.ffi
+        try await Task.detached {
+            try ffi.sendAttachment(
+                roomId: roomId,
+                filename: filename,
+                mimeType: mimeType,
+                data: data,
+                width: width,
+                height: height
+            )
+        }.value
+    }
+
+    public func downloadMedia(mxcUri: String) async throws -> Data {
+        let ffi = self.ffi
+        return try await Task.detached {
+            try ffi.downloadMedia(mxcUri: mxcUri)
+        }.value
+    }
+
     public func messages(roomId: String, limit: UInt64 = 50, from: String? = nil) async throws -> MessageBatch {
         let ffi = self.ffi
         return try await Task.detached {

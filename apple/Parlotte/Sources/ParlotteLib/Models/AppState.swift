@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import ParlotteSDK
+import UniformTypeIdentifiers
 
 @Observable
 @MainActor
@@ -204,9 +205,19 @@ public final class AppState {
         rooms = []
         typingUsers = [:]
         selectedRoomId = nil
+        pendingAttachments.removeAll()
+        mediaCache.removeAllObjects()
         clearSavedSession()
         clearStore()
     }
+
+    /// Bytes for optimistic attachment messages, keyed on the placeholder event ID.
+    /// Removed when the server-side event replaces the placeholder on sync.
+    public var pendingAttachments: [String: Data] = [:]
+
+    /// In-memory cache of downloaded media bytes keyed on mxc:// URI.
+    /// Auto-evicts under memory pressure.
+    public let mediaCache = NSCache<NSString, NSData>()
 
     /// Refresh the room list. Returns true if the selected room has new unread messages.
     @discardableResult
@@ -289,6 +300,9 @@ public final class AppState {
             let newMessages = serverMessages.filter { !existingIds.contains($0.eventId) }
             if !newMessages.isEmpty {
                 // Replace optimistic placeholders now that real messages arrived
+                for msg in messages where msg.eventId.hasPrefix("~optimistic:") {
+                    pendingAttachments.removeValue(forKey: msg.eventId)
+                }
                 messages.removeAll { $0.eventId.hasPrefix("~optimistic:") }
                 messages.append(contentsOf: newMessages)
                 changed = true
@@ -311,7 +325,12 @@ public final class AppState {
             messageType: "text",
             timestampMs: UInt64(Date().timeIntervalSince1970 * 1000),
             isEdited: false,
-            repliedToEventId: nil
+            repliedToEventId: nil,
+            mediaSource: nil,
+            mediaMimeType: nil,
+            mediaWidth: nil,
+            mediaHeight: nil,
+            mediaSize: nil
         )
     }
 
@@ -336,6 +355,91 @@ public final class AppState {
             // Non-fatal
         }
         isLoadingMoreMessages = false
+    }
+
+    /// Send a file attachment. Shows an optimistic placeholder while the upload
+    /// completes; the placeholder is replaced by the real event on the next sync,
+    /// or removed if the upload fails.
+    public func sendAttachment(fileURL: URL) async {
+        guard let client, let roomId = selectedRoomId else { return }
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
+
+        let filename = fileURL.lastPathComponent
+        let mimeType = Self.detectMimeType(for: fileURL)
+        let isImage = mimeType.hasPrefix("image/")
+
+        var width: UInt32?
+        var height: UInt32?
+        if isImage, let image = NSImage(data: data) {
+            let size = image.size
+            if size.width > 0 { width = UInt32(size.width) }
+            if size.height > 0 { height = UInt32(size.height) }
+        }
+
+        let placeholder = MessageInfo(
+            eventId: "~optimistic:\(UUID().uuidString)",
+            sender: loggedInUserId ?? "",
+            body: filename,
+            formattedBody: nil,
+            messageType: isImage ? "image" : "file",
+            timestampMs: UInt64(Date().timeIntervalSince1970 * 1000),
+            isEdited: false,
+            repliedToEventId: nil,
+            mediaSource: nil,
+            mediaMimeType: mimeType,
+            mediaWidth: width,
+            mediaHeight: height,
+            mediaSize: UInt64(data.count)
+        )
+        messages.append(placeholder)
+        pendingAttachments[placeholder.eventId] = data
+
+        do {
+            try await client.sendAttachment(
+                roomId: roomId,
+                filename: filename,
+                mimeType: mimeType,
+                data: data,
+                width: width,
+                height: height
+            )
+        } catch {
+            messages.removeAll { $0.eventId == placeholder.eventId }
+            pendingAttachments.removeValue(forKey: placeholder.eventId)
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Fetch media bytes for the given mxc URI. Checks the in-memory cache first,
+    /// then downloads via the client and caches the result.
+    public func loadMedia(mxcUri: String) async -> Data? {
+        let key = mxcUri as NSString
+        if let cached = mediaCache.object(forKey: key) {
+            return cached as Data
+        }
+        guard let client else { return nil }
+        do {
+            let data = try await client.downloadMedia(mxcUri: mxcUri)
+            mediaCache.setObject(data as NSData, forKey: key)
+            return data
+        } catch {
+            return nil
+        }
+    }
+
+    private static func detectMimeType(for url: URL) -> String {
+        if let type = UTType(filenameExtension: url.pathExtension),
+           let mime = type.preferredMIMEType {
+            return mime
+        }
+        return "application/octet-stream"
     }
 
     public func sendMessage(body: String) async {

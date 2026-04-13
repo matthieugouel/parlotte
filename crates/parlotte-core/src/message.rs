@@ -17,6 +17,16 @@ pub struct MessageInfo {
     pub is_edited: bool,
     /// The event ID this message is replying to, if any.
     pub replied_to_event_id: Option<String>,
+    /// The mxc:// URI for media messages (image, file, video, audio).
+    pub media_source: Option<String>,
+    /// MIME type for media messages.
+    pub media_mime_type: Option<String>,
+    /// Width in pixels for image/video messages.
+    pub media_width: Option<u32>,
+    /// Height in pixels for image/video messages.
+    pub media_height: Option<u32>,
+    /// Size in bytes of the media file.
+    pub media_size: Option<u64>,
 }
 
 /// A batch of messages with a pagination token for loading more.
@@ -83,6 +93,11 @@ mod tests {
             timestamp_ms: 1700000000000,
             is_edited: false,
             replied_to_event_id: Some("$parent:example.com".into()),
+            media_source: None,
+            media_mime_type: None,
+            media_width: None,
+            media_height: None,
+            media_size: None,
         };
         assert_eq!(msg.event_id, "$event1:example.com");
         assert_eq!(msg.sender, "@alice:example.com");
@@ -104,6 +119,11 @@ mod tests {
             timestamp_ms: 0,
             is_edited: false,
             replied_to_event_id: None,
+            media_source: None,
+            media_mime_type: None,
+            media_width: None,
+            media_height: None,
+            media_size: None,
         };
         let cloned = msg.clone();
         assert_eq!(msg.body, cloned.body);

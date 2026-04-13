@@ -15,6 +15,8 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var redactMessageCalls: [(roomId: String, eventId: String)] = []
     var sendReadReceiptCalls: [(roomId: String, eventId: String)] = []
     var sendTypingNoticeCalls: [(roomId: String, isTyping: Bool)] = []
+    var sendAttachmentCalls: [(roomId: String, filename: String, mimeType: String, data: Data, width: UInt32?, height: UInt32?)] = []
+    var downloadMediaCalls: [String] = []
     var messagesCalls: [(roomId: String, limit: UInt64, from: String?)] = []
     var leaveRoomCalls: [String] = []
     var stopSyncCalls = 0
@@ -35,6 +37,9 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var redactMessageError: Error?
     var sendReadReceiptError: Error?
     var sendTypingNoticeError: Error?
+    var sendAttachmentError: Error?
+    var downloadMediaError: Error?
+    var downloadMediaResult: Data = Data()
     var messagesError: Error?
     var roomsError: Error?
     var leaveRoomError: Error?
@@ -73,6 +78,17 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     func sendTypingNotice(roomId: String, isTyping: Bool) async throws {
         try errorFor(sendTypingNoticeError)
         sendTypingNoticeCalls.append((roomId, isTyping))
+    }
+
+    func sendAttachment(roomId: String, filename: String, mimeType: String, data: Data, width: UInt32?, height: UInt32?) async throws {
+        try errorFor(sendAttachmentError)
+        sendAttachmentCalls.append((roomId, filename, mimeType, data, width, height))
+    }
+
+    func downloadMedia(mxcUri: String) async throws -> Data {
+        try errorFor(downloadMediaError)
+        downloadMediaCalls.append(mxcUri)
+        return downloadMediaResult
     }
 
     func messages(roomId: String, limit: UInt64, from: String?) async throws -> MessageBatch {

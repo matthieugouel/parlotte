@@ -101,6 +101,11 @@ pub struct MessageInfo {
     pub timestamp_ms: u64,
     pub is_edited: bool,
     pub replied_to_event_id: Option<String>,
+    pub media_source: Option<String>,
+    pub media_mime_type: Option<String>,
+    pub media_width: Option<u32>,
+    pub media_height: Option<u32>,
+    pub media_size: Option<u64>,
 }
 
 impl From<CoreMessageInfo> for MessageInfo {
@@ -114,6 +119,11 @@ impl From<CoreMessageInfo> for MessageInfo {
             timestamp_ms: m.timestamp_ms,
             is_edited: m.is_edited,
             replied_to_event_id: m.replied_to_event_id,
+            media_source: m.media_source,
+            media_mime_type: m.media_mime_type,
+            media_width: m.media_width,
+            media_height: m.media_height,
+            media_size: m.media_size,
         }
     }
 }
@@ -359,6 +369,22 @@ impl ParlotteClientFFI {
         Ok(self.inner.send_typing_notice(&room_id, is_typing)?)
     }
 
+    pub fn send_attachment(
+        &self,
+        room_id: String,
+        filename: String,
+        mime_type: String,
+        data: Vec<u8>,
+        width: Option<u32>,
+        height: Option<u32>,
+    ) -> Result<(), ParlotteError> {
+        Ok(self.inner.send_attachment(&room_id, &filename, &mime_type, data, width, height)?)
+    }
+
+    pub fn download_media(&self, mxc_uri: String) -> Result<Vec<u8>, ParlotteError> {
+        Ok(self.inner.download_media(&mxc_uri)?)
+    }
+
     pub fn edit_message(&self, room_id: String, event_id: String, new_body: String) -> Result<(), ParlotteError> {
         Ok(self.inner.edit_message(&room_id, &event_id, &new_body)?)
     }
@@ -450,6 +476,11 @@ mod tests {
             timestamp_ms: 1700000000000,
             is_edited: true,
             replied_to_event_id: Some("$parent:example.com".into()),
+            media_source: None,
+            media_mime_type: None,
+            media_width: None,
+            media_height: None,
+            media_size: None,
         };
         let ffi: MessageInfo = core.into();
         assert_eq!(ffi.event_id, "$evt:example.com");
@@ -473,12 +504,42 @@ mod tests {
             timestamp_ms: 0,
             is_edited: false,
             replied_to_event_id: None,
+            media_source: None,
+            media_mime_type: None,
+            media_width: None,
+            media_height: None,
+            media_size: None,
         };
         let ffi: MessageInfo = core.into();
         assert!(ffi.formatted_body.is_none());
         assert_eq!(ffi.message_type, "notice");
         assert!(!ffi.is_edited);
         assert!(ffi.replied_to_event_id.is_none());
+    }
+
+    #[test]
+    fn message_info_converts_media_fields() {
+        let core = CoreMessageInfo {
+            event_id: "$img:example.com".into(),
+            sender: "@alice:example.com".into(),
+            body: "photo.png".into(),
+            formatted_body: None,
+            message_type: "image".into(),
+            timestamp_ms: 1700000000000,
+            is_edited: false,
+            replied_to_event_id: None,
+            media_source: Some("mxc://example.com/abc123".into()),
+            media_mime_type: Some("image/png".into()),
+            media_width: Some(1920),
+            media_height: Some(1080),
+            media_size: Some(204800),
+        };
+        let ffi: MessageInfo = core.into();
+        assert_eq!(ffi.media_source.as_deref(), Some("mxc://example.com/abc123"));
+        assert_eq!(ffi.media_mime_type.as_deref(), Some("image/png"));
+        assert_eq!(ffi.media_width, Some(1920));
+        assert_eq!(ffi.media_height, Some(1080));
+        assert_eq!(ffi.media_size, Some(204800));
     }
 
     // -- MessageBatch round-trip --
@@ -495,6 +556,11 @@ mod tests {
                 timestamp_ms: 100,
                 is_edited: false,
                 replied_to_event_id: None,
+                media_source: None,
+                media_mime_type: None,
+                media_width: None,
+                media_height: None,
+                media_size: None,
             }],
             end_token: Some("t47_42_0_1".into()),
         };

@@ -38,7 +38,12 @@ struct AppStateTests {
             messageType: "text",
             timestampMs: 1_700_000_000_000,
             isEdited: false,
-            repliedToEventId: repliedToEventId
+            repliedToEventId: repliedToEventId,
+            mediaSource: nil,
+            mediaMimeType: nil,
+            mediaWidth: nil,
+            mediaHeight: nil,
+            mediaSize: nil
         )
     }
 
@@ -274,7 +279,8 @@ struct AppStateTests {
                 MessageInfo(
                     eventId: "$e1:x.com", sender: "@bob:example.com",
                     body: "Edited", formattedBody: nil, messageType: "text",
-                    timestampMs: 1_700_000_000_000, isEdited: true, repliedToEventId: nil
+                    timestampMs: 1_700_000_000_000, isEdited: true, repliedToEventId: nil,
+                    mediaSource: nil, mediaMimeType: nil, mediaWidth: nil, mediaHeight: nil, mediaSize: nil
                 ),
             ],
             endToken: nil
@@ -312,7 +318,8 @@ struct AppStateTests {
             MessageInfo(
                 eventId: "~optimistic:abc", sender: "@alice:example.com",
                 body: "Sending...", formattedBody: nil, messageType: "text",
-                timestampMs: 1_700_000_001_000, isEdited: false, repliedToEventId: nil
+                timestampMs: 1_700_000_001_000, isEdited: false, repliedToEventId: nil,
+                mediaSource: nil, mediaMimeType: nil, mediaWidth: nil, mediaHeight: nil, mediaSize: nil
             ),
         ]
         // Server returns the old message but not the optimistic one yet
@@ -614,5 +621,126 @@ struct AppStateTests {
         await appState.sendTypingNotice(isTyping: true)
 
         #expect(appState.errorMessage == nil, "Typing notice errors should be swallowed")
+    }
+
+    // MARK: - Attachments
+
+    @Test("Send attachment appends optimistic placeholder with media fields")
+    mutating func sendAttachmentAppendsOptimistically() async {
+        let data = MediaTestHelpers.pngMagicBytes()
+        let url = MediaTestHelpers.makeTempFile(name: "photo.png", contents: data)
+        defer { MediaTestHelpers.removeTempFile(at: url) }
+
+        await appState.sendAttachment(fileURL: url)
+
+        #expect(appState.messages.count == 1)
+        let msg = appState.messages[0]
+        #expect(msg.eventId.hasPrefix("~optimistic:"))
+        #expect(msg.messageType == "image")
+        #expect(msg.body == "photo.png")
+        #expect(msg.mediaMimeType == "image/png")
+        #expect(msg.mediaSize == UInt64(data.count))
+        #expect(appState.pendingAttachments[msg.eventId] == data)
+    }
+
+    @Test("Send attachment classifies non-image as file")
+    mutating func sendAttachmentClassifiesNonImageAsFile() async {
+        let data = MediaTestHelpers.stringBytes("hello")
+        let url = MediaTestHelpers.makeTempFile(name: "notes.txt", contents: data)
+        defer { MediaTestHelpers.removeTempFile(at: url) }
+
+        await appState.sendAttachment(fileURL: url)
+
+        #expect(appState.messages.count == 1)
+        #expect(appState.messages[0].messageType == "file")
+    }
+
+    @Test("Send attachment removes placeholder and clears pending on failure")
+    mutating func sendAttachmentRemovesPlaceholderOnFailure() async {
+        mock.sendAttachmentError = ParlotteError.Room(message: "upload failed")
+        let url = MediaTestHelpers.makeTempFile(name: "fail.bin", contents: MediaTestHelpers.bytes([0x00]))
+        defer { MediaTestHelpers.removeTempFile(at: url) }
+
+        await appState.sendAttachment(fileURL: url)
+
+        #expect(appState.messages.isEmpty)
+        #expect(appState.pendingAttachments.isEmpty)
+        #expect(appState.errorMessage != nil)
+    }
+
+    @Test("Send attachment calls client with correct args")
+    mutating func sendAttachmentCallsClientWithArgs() async {
+        let data = MediaTestHelpers.stringBytes("pdf bytes")
+        let url = MediaTestHelpers.makeTempFile(name: "doc.pdf", contents: data)
+        defer { MediaTestHelpers.removeTempFile(at: url) }
+
+        await appState.sendAttachment(fileURL: url)
+
+        #expect(mock.sendAttachmentCalls.count == 1)
+        let call = mock.sendAttachmentCalls[0]
+        #expect(call.roomId == "!room:example.com")
+        #expect(call.filename == "doc.pdf")
+        #expect(call.mimeType == "application/pdf")
+        #expect(call.data == data)
+    }
+
+    @Test("Send attachment requires selected room")
+    mutating func sendAttachmentRequiresSelectedRoom() async {
+        appState.selectedRoomId = nil
+        let url = MediaTestHelpers.makeTempFile(name: "x.txt", contents: MediaTestHelpers.stringBytes("x"))
+        defer { MediaTestHelpers.removeTempFile(at: url) }
+
+        await appState.sendAttachment(fileURL: url)
+
+        #expect(mock.sendAttachmentCalls.isEmpty)
+    }
+
+    @Test("Load media caches downloaded bytes")
+    mutating func loadMediaCachesBytes() async {
+        let bytes = MediaTestHelpers.stringBytes("image-bytes")
+        mock.downloadMediaResult = bytes
+
+        let first = await appState.loadMedia(mxcUri: "mxc://a/1")
+        let second = await appState.loadMedia(mxcUri: "mxc://a/1")
+
+        #expect(first == bytes)
+        #expect(second == bytes)
+        #expect(mock.downloadMediaCalls.count == 1, "second call should hit cache")
+    }
+
+    @Test("Load media returns nil on error")
+    mutating func loadMediaReturnsNilOnError() async {
+        mock.downloadMediaError = ParlotteError.Network(message: "unreachable")
+
+        let result = await appState.loadMedia(mxcUri: "mxc://a/1")
+
+        #expect(result == nil)
+    }
+
+    @Test("Append new messages drops pending attachments for replaced placeholders")
+    mutating func appendNewMessagesClearsPendingAttachments() async {
+        let url = MediaTestHelpers.makeTempFile(name: "img.png", contents: MediaTestHelpers.bytes([0xFF]))
+        defer { MediaTestHelpers.removeTempFile(at: url) }
+
+        await appState.sendAttachment(fileURL: url)
+        #expect(appState.pendingAttachments.count == 1)
+
+        // Server confirms with a real event.
+        let realMsg = makeMessage(eventId: "$real:x.com", sender: "@alice:example.com", body: "img.png")
+        mock.messagesResult = MessageBatch(messages: [realMsg], endToken: nil)
+
+        await appState.appendNewMessages()
+
+        #expect(appState.pendingAttachments.isEmpty)
+        #expect(!appState.messages.contains { $0.eventId.hasPrefix("~optimistic:") })
+    }
+
+    @Test("Logout clears pending attachments")
+    mutating func logoutClearsMediaState() async {
+        appState.pendingAttachments["~optimistic:foo"] = MediaTestHelpers.bytes([0x42])
+
+        await appState.logout()
+
+        #expect(appState.pendingAttachments.isEmpty)
     }
 }

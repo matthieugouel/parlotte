@@ -35,8 +35,8 @@
 - [ ] Reactions (emoji)
 - [x] Rich text rendering (HTML formatted messages)
 - [x] Non-text message indicators (image, file, video, audio, location)
-- [ ] Media messages (display images, download files)
-- [ ] Media upload (send images, files)
+- [x] Media messages (display images, download files)
+- [x] Media upload (send images, files)
 
 ## UX
 - [x] Unread indicators / notification badges

@@ -448,6 +448,8 @@ impl ParlotteClient {
 
                     let (body, formatted_body) = extract_body_and_formatted(&original.content.msgtype);
                     let message_type = message_type_str(&original.content.msgtype).to_owned();
+                    let (media_source, media_mime_type, media_width, media_height, media_size) =
+                        extract_media_info(&original.content.msgtype);
 
                     messages.push(MessageInfo {
                         event_id: original.event_id.to_string(),
@@ -458,6 +460,11 @@ impl ParlotteClient {
                         timestamp_ms: original.origin_server_ts.0.into(),
                         is_edited: false,
                         replied_to_event_id,
+                        media_source,
+                        media_mime_type,
+                        media_width,
+                        media_height,
+                        media_size,
                     });
                 }
             }
@@ -800,6 +807,110 @@ impl ParlotteClient {
         })
     }
 
+    /// Upload an attachment and post it as a message to the given room.
+    ///
+    /// `mime_type` must be a valid media type string (e.g. `"image/png"`). When
+    /// the mime's top-level type is `image`, the attachment is sent as
+    /// `m.image` with the provided dimensions; otherwise it is sent as
+    /// `m.file`.
+    pub fn send_attachment(
+        &self,
+        room_id: &str,
+        filename: &str,
+        mime_type: &str,
+        data: Vec<u8>,
+        width: Option<u32>,
+        height: Option<u32>,
+    ) -> Result<()> {
+        use matrix_sdk::attachment::{
+            AttachmentConfig, AttachmentInfo, BaseFileInfo, BaseImageInfo,
+        };
+        use matrix_sdk::ruma::UInt;
+
+        let mime: mime::Mime = mime_type.parse().map_err(|e: mime::FromStrError| ParlotteError::Room {
+            message: format!("invalid MIME type {mime_type:?}: {e}"),
+        })?;
+
+        let size_uint = UInt::new(data.len() as u64);
+        let info = if mime.type_() == mime::IMAGE {
+            AttachmentInfo::Image(BaseImageInfo {
+                width: width.map(|w| UInt::from(w)),
+                height: height.map(|h| UInt::from(h)),
+                size: size_uint,
+                blurhash: None,
+                is_animated: None,
+            })
+        } else {
+            AttachmentInfo::File(BaseFileInfo { size: size_uint })
+        };
+
+        let client = self.client();
+        self.runtime.block_on(async {
+            let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid room ID: {e}"),
+            })?;
+
+            let room = client.get_room(room_id).ok_or_else(|| ParlotteError::Room {
+                message: format!("room {room_id} not found"),
+            })?;
+
+            let config = AttachmentConfig::new().info(info);
+            room.send_attachment(filename.to_owned(), &mime, data, config)
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to send attachment: {e}"),
+                })?;
+
+            Ok(())
+        })
+    }
+
+    /// Download the raw bytes of a media item.
+    ///
+    /// `media_source` is the serialised `MediaSource` JSON produced by
+    /// `extract_media_info`. It may represent either a plain mxc:// URI or an
+    /// encrypted file (with decryption keys), so encrypted-room media is
+    /// handled transparently.
+    ///
+    /// For backwards-compatibility a bare `mxc://` URI string is also accepted.
+    pub fn download_media(&self, media_source: &str) -> Result<Vec<u8>> {
+        use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
+        use matrix_sdk::ruma::events::room::MediaSource;
+        use matrix_sdk::ruma::OwnedMxcUri;
+
+        // Try deserialising as full MediaSource JSON first; fall back to treating
+        // the string as a plain mxc URI for callers that pass one directly.
+        let source: MediaSource = serde_json::from_str(media_source).unwrap_or_else(|_| {
+            MediaSource::Plain(OwnedMxcUri::from(media_source))
+        });
+
+        // Validate that whichever variant we ended up with has a valid mxc URI.
+        let uri_str = match &source {
+            MediaSource::Plain(uri) => uri.as_str(),
+            MediaSource::Encrypted(file) => file.url.as_str(),
+        };
+        if !uri_str.starts_with("mxc://") {
+            return Err(ParlotteError::Room {
+                message: format!("invalid mxc URI: {uri_str}"),
+            });
+        }
+
+        let client = self.client();
+        self.runtime.block_on(async {
+            let request = MediaRequestParameters {
+                source,
+                format: MediaFormat::File,
+            };
+            client
+                .media()
+                .get_media_content(&request, true)
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to download media: {e}"),
+                })
+        })
+    }
+
     /// Get the list of members in a room.
     pub fn room_members(&self, room_id: &str) -> Result<Vec<RoomMemberInfo>> {
         use matrix_sdk::RoomMemberships;
@@ -880,6 +991,82 @@ fn extract_body_and_formatted(
         MessageType::Audio(audio) => (audio.body.clone(), None),
         MessageType::Location(loc) => (loc.body.clone(), None),
         _ => ("[unsupported message]".to_owned(), None),
+    }
+}
+
+/// Media metadata extracted from a message content.
+///
+/// Returns (source mxc URI, mime type, width, height, size). All fields are
+/// `None` for non-media message types (text, notice, emote, location).
+type MediaFields = (Option<String>, Option<String>, Option<u32>, Option<u32>, Option<u64>);
+
+fn extract_media_info(
+    msgtype: &matrix_sdk::ruma::events::room::message::MessageType,
+) -> MediaFields {
+    use matrix_sdk::ruma::events::room::message::MessageType;
+    use matrix_sdk::ruma::events::room::MediaSource;
+
+    // Serialize the full MediaSource (including encryption keys for E2EE rooms)
+    // so that download_media can reconstruct the correct variant for decryption.
+    let serialize_source = |source: &MediaSource| -> String {
+        serde_json::to_string(source).unwrap_or_else(|_| match source {
+            MediaSource::Plain(uri) => uri.to_string(),
+            MediaSource::Encrypted(file) => file.url.to_string(),
+        })
+    };
+
+    match msgtype {
+        MessageType::Image(img) => {
+            let source = Some(serialize_source(&img.source));
+            let (mime, w, h, size) = img
+                .info
+                .as_ref()
+                .map(|i| {
+                    (
+                        i.mimetype.clone(),
+                        i.width.map(|v| u64::from(v) as u32),
+                        i.height.map(|v| u64::from(v) as u32),
+                        i.size.map(|v| u64::from(v)),
+                    )
+                })
+                .unwrap_or((None, None, None, None));
+            (source, mime, w, h, size)
+        }
+        MessageType::File(file) => {
+            let source = Some(serialize_source(&file.source));
+            let (mime, size) = file
+                .info
+                .as_ref()
+                .map(|i| (i.mimetype.clone(), i.size.map(|v| u64::from(v))))
+                .unwrap_or((None, None));
+            (source, mime, None, None, size)
+        }
+        MessageType::Video(video) => {
+            let source = Some(serialize_source(&video.source));
+            let (mime, w, h, size) = video
+                .info
+                .as_ref()
+                .map(|i| {
+                    (
+                        i.mimetype.clone(),
+                        i.width.map(|v| u64::from(v) as u32),
+                        i.height.map(|v| u64::from(v) as u32),
+                        i.size.map(|v| u64::from(v)),
+                    )
+                })
+                .unwrap_or((None, None, None, None));
+            (source, mime, w, h, size)
+        }
+        MessageType::Audio(audio) => {
+            let source = Some(serialize_source(&audio.source));
+            let (mime, size) = audio
+                .info
+                .as_ref()
+                .map(|i| (i.mimetype.clone(), i.size.map(|v| u64::from(v))))
+                .unwrap_or((None, None));
+            (source, mime, None, None, size)
+        }
+        _ => (None, None, None, None, None),
     }
 }
 
@@ -1092,6 +1279,54 @@ mod tests {
         let err = result.unwrap_err();
         assert!(matches!(err, ParlotteError::Room { .. }));
         assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn send_attachment_rejects_invalid_room_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.send_attachment("garbage", "file.png", "image/png", vec![1, 2, 3], Some(10), Some(10));
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
+    }
+
+    #[test]
+    fn send_attachment_rejects_nonexistent_room() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.send_attachment(
+            "!nonexistent:example.com",
+            "file.png",
+            "image/png",
+            vec![1, 2, 3],
+            None,
+            None,
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ParlotteError::Room { .. }));
+        assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn send_attachment_rejects_invalid_mime() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.send_attachment(
+            "!room:example.com",
+            "file.png",
+            "not a valid mime type",
+            vec![1, 2, 3],
+            None,
+            None,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("invalid MIME type"));
+    }
+
+    #[test]
+    fn download_media_rejects_invalid_mxc_uri() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.download_media("not-a-valid-mxc-uri");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
     }
 
     #[test]

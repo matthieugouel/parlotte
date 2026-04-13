@@ -1,6 +1,8 @@
+import AppKit
 import ParlotteLib
 import ParlotteSDK
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct RoomDetailView: View {
     @Environment(AppState.self) private var appState
@@ -168,6 +170,16 @@ struct RoomDetailView: View {
                 }
 
                 HStack(spacing: 10) {
+                    Button {
+                        attachFile()
+                    } label: {
+                        Image(systemName: "paperclip")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Attach file")
+
                     TextField("Send a message...", text: $messageText, axis: .vertical)
                         .textFieldStyle(.plain)
                         .font(.body)
@@ -309,6 +321,16 @@ struct RoomDetailView: View {
             }
         }
     }
+
+    private func attachFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [.image, .pdf, .data]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { await appState.sendAttachment(fileURL: url) }
+    }
 }
 
 private struct TypingIndicator: View {
@@ -339,6 +361,7 @@ private struct TypingIndicator: View {
 }
 
 struct MessageBubble: View {
+    @Environment(AppState.self) private var appState
     let message: MessageInfo
     let isOwnMessage: Bool
     let repliedMessage: MessageInfo?
@@ -497,11 +520,9 @@ struct MessageBubble: View {
     private var messageContent: some View {
         switch message.messageType {
         case "image":
-            Label(message.body, systemImage: "photo")
-                .foregroundStyle(.secondary)
+            MediaImageView(message: message)
         case "file":
-            Label(message.body, systemImage: "doc")
-                .foregroundStyle(.secondary)
+            MediaFileView(message: message)
         case "video":
             Label(message.body, systemImage: "film")
                 .foregroundStyle(.secondary)
@@ -590,5 +611,204 @@ extension RoomDetailView {
     static func calendarDay(_ timestampMs: UInt64) -> DateComponents {
         let date = Date(timeIntervalSince1970: Double(timestampMs) / 1000.0)
         return Calendar.current.dateComponents([.year, .month, .day], from: date)
+    }
+}
+
+// MARK: - Media
+
+private struct MediaImageView: View {
+    @Environment(AppState.self) private var appState
+    let message: MessageInfo
+
+    @State private var imageData: Data?
+    @State private var loadFailed = false
+    @State private var showFullSize = false
+
+    private var aspectRatio: CGFloat {
+        guard let w = message.mediaWidth, let h = message.mediaHeight,
+              w > 0, h > 0 else { return 4.0 / 3.0 }
+        return CGFloat(w) / CGFloat(h)
+    }
+
+    private var maxWidth: CGFloat { 300 }
+
+    @State private var decodedImage: NSImage?
+
+    var body: some View {
+        Group {
+            if let nsImage = decodedImage {
+                Button {
+                    showFullSize = true
+                } label: {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: maxWidth)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+                .sheet(isPresented: $showFullSize) {
+                    FullSizeImageView(image: nsImage, filename: message.body) {
+                        showFullSize = false
+                    }
+                }
+            } else if loadFailed {
+                Label("Failed to load image", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.secondary)
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.secondary.opacity(0.1))
+                    ProgressView()
+                }
+                .frame(width: maxWidth, height: maxWidth / aspectRatio)
+            }
+        }
+        .task(id: message.eventId) {
+            func tryDecode(_ data: Data) {
+                if let img = NSImage(data: data) {
+                    decodedImage = img
+                } else {
+                    loadFailed = true
+                }
+            }
+
+            // Optimistic path: bytes we just uploaded are held locally.
+            if let pending = appState.pendingAttachments[message.eventId] {
+                tryDecode(pending)
+                return
+            }
+            guard let mxc = message.mediaSource else {
+                loadFailed = true
+                return
+            }
+            if let data = await appState.loadMedia(mxcUri: mxc) {
+                tryDecode(data)
+            } else {
+                loadFailed = true
+            }
+        }
+    }
+}
+
+private struct FullSizeImageView: View {
+    let image: NSImage
+    let filename: String
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(filename)
+                    .font(.headline)
+                Spacer()
+                Button("Done") { onClose() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView([.horizontal, .vertical]) {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            }
+        }
+        .frame(minWidth: 600, minHeight: 400)
+    }
+}
+
+private struct MediaFileView: View {
+    @Environment(AppState.self) private var appState
+    let message: MessageInfo
+
+    @State private var isDownloading = false
+    @State private var errorText: String?
+
+    private var sizeLabel: String {
+        guard let size = message.mediaSize else { return "" }
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(size))
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "doc.fill")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(message.body)
+                    .font(.body)
+                if !sizeLabel.isEmpty {
+                    Text(sizeLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let errorText {
+                    Text(errorText)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+
+            Spacer()
+
+            if isDownloading {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Button {
+                    saveFile()
+                } label: {
+                    Image(systemName: "arrow.down.circle")
+                        .font(.title2)
+                }
+                .buttonStyle(.plain)
+                .help("Download")
+                .disabled(message.mediaSource == nil)
+            }
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func saveFile() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = message.body
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+
+        isDownloading = true
+        errorText = nil
+        Task {
+            defer { isDownloading = false }
+            // Pending (just-uploaded) bytes are stored locally.
+            if let pending = appState.pendingAttachments[message.eventId] {
+                do {
+                    try pending.write(to: destination)
+                } catch {
+                    errorText = error.localizedDescription
+                }
+                return
+            }
+            guard let mxc = message.mediaSource else {
+                errorText = "No media source"
+                return
+            }
+            guard let data = await appState.loadMedia(mxcUri: mxc) else {
+                errorText = "Download failed"
+                return
+            }
+            do {
+                try data.write(to: destination)
+            } catch {
+                errorText = error.localizedDescription
+            }
+        }
     }
 }
