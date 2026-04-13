@@ -1,3 +1,14 @@
+/// A single reaction on a message.
+#[derive(Debug, Clone)]
+pub struct ReactionInfo {
+    /// The event ID of the m.reaction event itself (needed for redaction/toggle).
+    pub event_id: String,
+    /// The emoji key (e.g. "👍").
+    pub key: String,
+    /// The sender's Matrix user ID.
+    pub sender: String,
+}
+
 /// A single message from a room timeline.
 #[derive(Debug, Clone)]
 pub struct MessageInfo {
@@ -27,6 +38,8 @@ pub struct MessageInfo {
     pub media_height: Option<u32>,
     /// Size in bytes of the media file.
     pub media_size: Option<u64>,
+    /// Reactions on this message.
+    pub reactions: Vec<ReactionInfo>,
 }
 
 /// A batch of messages with a pagination token for loading more.
@@ -98,6 +111,7 @@ mod tests {
             media_width: None,
             media_height: None,
             media_size: None,
+            reactions: vec![],
         };
         assert_eq!(msg.event_id, "$event1:example.com");
         assert_eq!(msg.sender, "@alice:example.com");
@@ -124,6 +138,7 @@ mod tests {
             media_width: None,
             media_height: None,
             media_size: None,
+            reactions: vec![],
         };
         let cloned = msg.clone();
         assert_eq!(msg.body, cloned.body);

@@ -299,6 +299,9 @@ struct RoomDetailView: View {
                         },
                         onDelete: {
                             Task { await appState.deleteMessage(eventId: message.eventId) }
+                        },
+                        onReact: { key in
+                            Task { await appState.toggleReaction(eventId: message.eventId, key: key) }
                         }
                     )
                 }
@@ -368,11 +371,13 @@ struct MessageBubble: View {
     let onReply: () -> Void
     let onEdit: (String) -> Void
     let onDelete: () -> Void
+    let onReact: (String) -> Void
 
     @State private var isEditing = false
     @State private var editText = ""
     @State private var isHovered = false
     @State private var showDeleteConfirm = false
+    @State private var showReactionPicker = false
 
     private var senderName: String {
         let userId = message.sender
@@ -402,7 +407,7 @@ struct MessageBubble: View {
 
                 Spacer()
 
-                if isHovered && !isEditing {
+                if (isHovered || showReactionPicker) && !isEditing {
                     HStack(spacing: 6) {
                         Button {
                             onReply()
@@ -413,6 +418,22 @@ struct MessageBubble: View {
                         }
                         .buttonStyle(.plain)
                         .help("Reply")
+
+                        Button {
+                            showReactionPicker = true
+                        } label: {
+                            Image(systemName: "face.smiling")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("React")
+                        .popover(isPresented: $showReactionPicker) {
+                            ReactionPicker { key in
+                                showReactionPicker = false
+                                onReact(key)
+                            }
+                        }
 
                         if isOwnMessage {
                             Button {
@@ -491,6 +512,14 @@ struct MessageBubble: View {
                 messageContent
                     .font(.title3)
                     .textSelection(.enabled)
+            }
+
+            if !message.reactions.isEmpty {
+                ReactionBar(
+                    reactions: message.reactions,
+                    currentUserId: appState.loggedInUserId ?? "",
+                    onToggle: onReact
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -605,6 +634,84 @@ private struct DateSeparator: View {
     }
 }
 
+// MARK: - Reactions
+
+private struct ReactionBar: View {
+    let reactions: [ReactionInfo]
+    let currentUserId: String
+    let onToggle: (String) -> Void
+
+    private var grouped: [(key: String, count: Int, userReacted: Bool)] {
+        var dict: [String: (count: Int, userReacted: Bool)] = [:]
+        for r in reactions {
+            var entry = dict[r.key, default: (count: 0, userReacted: false)]
+            entry.count += 1
+            if r.sender == currentUserId { entry.userReacted = true }
+            dict[r.key] = entry
+        }
+        return dict.map { (key: $0.key, count: $0.value.count, userReacted: $0.value.userReacted) }
+            .sorted { $0.key < $1.key }
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(grouped, id: \.key) { group in
+                Button {
+                    onToggle(group.key)
+                } label: {
+                    HStack(spacing: 2) {
+                        Text(group.key)
+                            .font(.caption)
+                        if group.count > 1 {
+                            Text("\(group.count)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(group.userReacted
+                                  ? Color.accentColor.opacity(0.2)
+                                  : Color.secondary.opacity(0.1))
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(group.userReacted ? Color.accentColor : .clear, lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+private struct ReactionPicker: View {
+    let onPick: (String) -> Void
+
+    private let commonEmoji = [
+        "\u{1f44d}", "\u{1f44e}", "\u{2764}\u{fe0f}", "\u{1f602}",
+        "\u{1f60d}", "\u{1f914}", "\u{1f389}", "\u{1f44f}",
+        "\u{1f525}", "\u{1f440}", "\u{2705}", "\u{274c}",
+    ]
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(36)), count: 4), spacing: 4) {
+            ForEach(commonEmoji, id: \.self) { emoji in
+                Button {
+                    onPick(emoji)
+                } label: {
+                    Text(emoji)
+                        .font(.title2)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(8)
+    }
+}
+
 // MARK: - Helpers
 
 extension RoomDetailView {
@@ -665,25 +772,18 @@ private struct MediaImageView: View {
             }
         }
         .task(id: message.eventId) {
-            func tryDecode(_ data: Data) {
-                if let img = NSImage(data: data) {
-                    decodedImage = img
-                } else {
-                    loadFailed = true
-                }
+            // Optimistic path: bytes we just uploaded are held locally.
+            let bytes: Data?
+            if let pending = appState.pendingAttachments[message.eventId] {
+                bytes = pending
+            } else if let mxc = message.mediaSource {
+                bytes = await appState.loadMedia(mxcUri: mxc)
+            } else {
+                bytes = nil
             }
 
-            // Optimistic path: bytes we just uploaded are held locally.
-            if let pending = appState.pendingAttachments[message.eventId] {
-                tryDecode(pending)
-                return
-            }
-            guard let mxc = message.mediaSource else {
-                loadFailed = true
-                return
-            }
-            if let data = await appState.loadMedia(mxcUri: mxc) {
-                tryDecode(data)
+            if let bytes, let img = NSImage(data: bytes) {
+                decodedImage = img
             } else {
                 loadFailed = true
             }

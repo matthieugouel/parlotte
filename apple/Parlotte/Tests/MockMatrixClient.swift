@@ -13,6 +13,8 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var sendReplyCalls: [(roomId: String, eventId: String, body: String)] = []
     var editMessageCalls: [(roomId: String, eventId: String, newBody: String)] = []
     var redactMessageCalls: [(roomId: String, eventId: String)] = []
+    var sendReactionCalls: [(roomId: String, eventId: String, key: String)] = []
+    var redactReactionCalls: [(roomId: String, reactionEventId: String)] = []
     var sendReadReceiptCalls: [(roomId: String, eventId: String)] = []
     var sendTypingNoticeCalls: [(roomId: String, isTyping: Bool)] = []
     var sendAttachmentCalls: [(roomId: String, filename: String, mimeType: String, data: Data, width: UInt32?, height: UInt32?)] = []
@@ -35,6 +37,9 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var sendReplyError: Error?
     var editMessageError: Error?
     var redactMessageError: Error?
+    var sendReactionError: Error?
+    var sendReactionResult: String = "$reaction:example.com"
+    var redactReactionError: Error?
     var sendReadReceiptError: Error?
     var sendTypingNoticeError: Error?
     var sendAttachmentError: Error?
@@ -68,6 +73,17 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     func redactMessage(roomId: String, eventId: String) async throws {
         try errorFor(redactMessageError)
         redactMessageCalls.append((roomId, eventId))
+    }
+
+    func sendReaction(roomId: String, eventId: String, key: String) async throws -> String {
+        try errorFor(sendReactionError)
+        sendReactionCalls.append((roomId, eventId, key))
+        return sendReactionResult
+    }
+
+    func redactReaction(roomId: String, reactionEventId: String) async throws {
+        try errorFor(redactReactionError)
+        redactReactionCalls.append((roomId, reactionEventId))
     }
 
     func sendReadReceipt(roomId: String, eventId: String) async throws {

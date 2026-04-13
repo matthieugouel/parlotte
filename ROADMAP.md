@@ -32,7 +32,7 @@
 - [x] Message deletion
 - [x] Reply to messages
 - [x] Typing indicators
-- [ ] Reactions (emoji)
+- [x] Reactions (emoji)
 - [x] Rich text rendering (HTML formatted messages)
 - [x] Non-text message indicators (image, file, video, audio, location)
 - [x] Media messages (display images, download files)
@@ -42,6 +42,7 @@
 - [x] Unread indicators / notification badges
 - [x] Read receipts (mark rooms as read)
 - [ ] User profile (display name, avatar)
+- [ ] Light & dark mode
 - [ ] Search (messages, rooms)
 
 ## Security

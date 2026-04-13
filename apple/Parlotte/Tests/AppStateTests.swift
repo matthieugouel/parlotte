@@ -28,7 +28,8 @@ struct AppStateTests {
         eventId: String = "$evt1:example.com",
         sender: String = "@bob:example.com",
         body: String = "Hello",
-        repliedToEventId: String? = nil
+        repliedToEventId: String? = nil,
+        reactions: [ReactionInfo] = []
     ) -> MessageInfo {
         MessageInfo(
             eventId: eventId,
@@ -43,7 +44,8 @@ struct AppStateTests {
             mediaMimeType: nil,
             mediaWidth: nil,
             mediaHeight: nil,
-            mediaSize: nil
+            mediaSize: nil,
+            reactions: reactions
         )
     }
 
@@ -280,7 +282,8 @@ struct AppStateTests {
                     eventId: "$e1:x.com", sender: "@bob:example.com",
                     body: "Edited", formattedBody: nil, messageType: "text",
                     timestampMs: 1_700_000_000_000, isEdited: true, repliedToEventId: nil,
-                    mediaSource: nil, mediaMimeType: nil, mediaWidth: nil, mediaHeight: nil, mediaSize: nil
+                    mediaSource: nil, mediaMimeType: nil, mediaWidth: nil, mediaHeight: nil, mediaSize: nil,
+                    reactions: []
                 ),
             ],
             endToken: nil
@@ -319,7 +322,8 @@ struct AppStateTests {
                 eventId: "~optimistic:abc", sender: "@alice:example.com",
                 body: "Sending...", formattedBody: nil, messageType: "text",
                 timestampMs: 1_700_000_001_000, isEdited: false, repliedToEventId: nil,
-                mediaSource: nil, mediaMimeType: nil, mediaWidth: nil, mediaHeight: nil, mediaSize: nil
+                mediaSource: nil, mediaMimeType: nil, mediaWidth: nil, mediaHeight: nil, mediaSize: nil,
+                reactions: []
             ),
         ]
         // Server returns the old message but not the optimistic one yet
@@ -742,5 +746,92 @@ struct AppStateTests {
         await appState.logout()
 
         #expect(appState.pendingAttachments.isEmpty)
+    }
+
+    // MARK: - Reactions
+
+    @Test("Toggle reaction adds optimistic reaction")
+    mutating func toggleReactionAddsOptimistically() async {
+        let msg = makeMessage()
+        appState.messages = [msg]
+
+        await appState.toggleReaction(eventId: msg.eventId, key: "\u{1f44d}")
+
+        #expect(appState.messages[0].reactions.count == 1)
+        #expect(appState.messages[0].reactions[0].key == "\u{1f44d}")
+        #expect(appState.messages[0].reactions[0].sender == "@alice:example.com")
+        // Optimistic ID should be replaced with real one
+        #expect(appState.messages[0].reactions[0].eventId == "$reaction:example.com")
+    }
+
+    @Test("Toggle reaction calls client with correct args")
+    mutating func toggleReactionCallsClient() async {
+        let msg = makeMessage()
+        appState.messages = [msg]
+
+        await appState.toggleReaction(eventId: msg.eventId, key: "\u{1f44d}")
+
+        #expect(mock.sendReactionCalls.count == 1)
+        #expect(mock.sendReactionCalls[0].roomId == "!room:example.com")
+        #expect(mock.sendReactionCalls[0].eventId == msg.eventId)
+        #expect(mock.sendReactionCalls[0].key == "\u{1f44d}")
+    }
+
+    @Test("Toggle reaction removes own existing reaction")
+    mutating func toggleReactionRemovesOwn() async {
+        let reaction = ReactionInfo(
+            eventId: "$r1:example.com",
+            key: "\u{1f44d}",
+            sender: "@alice:example.com"
+        )
+        let msg = makeMessage(reactions: [reaction])
+        appState.messages = [msg]
+
+        await appState.toggleReaction(eventId: msg.eventId, key: "\u{1f44d}")
+
+        #expect(appState.messages[0].reactions.isEmpty)
+        #expect(mock.redactReactionCalls.count == 1)
+        #expect(mock.redactReactionCalls[0].reactionEventId == "$r1:example.com")
+    }
+
+    @Test("Toggle reaction failure reverts optimistic add")
+    mutating func toggleReactionRevertsAddOnFailure() async {
+        mock.sendReactionError = ParlotteError.Room(message: "failed")
+        let msg = makeMessage()
+        appState.messages = [msg]
+
+        await appState.toggleReaction(eventId: msg.eventId, key: "\u{1f44d}")
+
+        #expect(appState.messages[0].reactions.isEmpty)
+        #expect(appState.errorMessage != nil)
+    }
+
+    @Test("Toggle reaction failure reverts optimistic remove")
+    mutating func toggleReactionRevertsRemoveOnFailure() async {
+        mock.redactReactionError = ParlotteError.Room(message: "failed")
+        let reaction = ReactionInfo(
+            eventId: "$r1:example.com",
+            key: "\u{1f44d}",
+            sender: "@alice:example.com"
+        )
+        let msg = makeMessage(reactions: [reaction])
+        appState.messages = [msg]
+
+        await appState.toggleReaction(eventId: msg.eventId, key: "\u{1f44d}")
+
+        #expect(appState.messages[0].reactions.count == 1)
+        #expect(appState.messages[0].reactions[0].eventId == "$r1:example.com")
+        #expect(appState.errorMessage != nil)
+    }
+
+    @Test("Toggle reaction requires selected room")
+    mutating func toggleReactionRequiresSelectedRoom() async {
+        appState.selectedRoomId = nil
+        let msg = makeMessage()
+        appState.messages = [msg]
+
+        await appState.toggleReaction(eventId: msg.eventId, key: "\u{1f44d}")
+
+        #expect(mock.sendReactionCalls.isEmpty)
     }
 }

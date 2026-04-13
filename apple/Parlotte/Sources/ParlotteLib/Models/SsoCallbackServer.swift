@@ -15,8 +15,8 @@ actor SsoCallbackServer {
 
         let port: UInt16 = try {
             let semaphore = DispatchSemaphore(value: 0)
-            var assignedPort: UInt16 = 0
-            var listenerError: Error?
+            nonisolated(unsafe) var assignedPort: UInt16 = 0
+            nonisolated(unsafe) var listenerError: Error?
 
             listener.stateUpdateHandler = { state in
                 switch state {

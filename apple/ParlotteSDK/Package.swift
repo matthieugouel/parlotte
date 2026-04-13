@@ -26,6 +26,9 @@ let package = Package(
                 .unsafeFlags([
                     "-L", rustLibDir,
                     "-lparlotte_ffi",
+                    // blake3 ships a pre-compiled neon assembly object built with a
+                    // newer macOS SDK; suppress the harmless version-mismatch warning.
+                    "-Xlinker", "-w",
                 ]),
                 .linkedFramework("Security"),
                 .linkedFramework("SystemConfiguration"),

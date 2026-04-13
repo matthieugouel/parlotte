@@ -19,9 +19,9 @@ use parlotte_core::{
     LoginMethods as CoreLoginMethods, MatrixSessionData as CoreMatrixSessionData,
     MessageBatch as CoreMessageBatch, MessageInfo as CoreMessageInfo,
     ParlotteClient as CoreClient, ParlotteError as CoreError,
-    PublicRoomInfo as CorePublicRoomInfo, RoomInfo as CoreRoomInfo,
-    RoomMemberInfo as CoreRoomMemberInfo, SessionInfo as CoreSessionInfo,
-    SsoProvider as CoreSsoProvider,
+    PublicRoomInfo as CorePublicRoomInfo, ReactionInfo as CoreReactionInfo,
+    RoomInfo as CoreRoomInfo, RoomMemberInfo as CoreRoomMemberInfo,
+    SessionInfo as CoreSessionInfo, SsoProvider as CoreSsoProvider,
 };
 use std::fmt;
 use std::sync::Arc;
@@ -92,6 +92,23 @@ impl From<CoreRoomInfo> for RoomInfo {
 }
 
 #[derive(uniffi::Record)]
+pub struct ReactionInfo {
+    pub event_id: String,
+    pub key: String,
+    pub sender: String,
+}
+
+impl From<CoreReactionInfo> for ReactionInfo {
+    fn from(r: CoreReactionInfo) -> Self {
+        Self {
+            event_id: r.event_id,
+            key: r.key,
+            sender: r.sender,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
 pub struct MessageInfo {
     pub event_id: String,
     pub sender: String,
@@ -106,6 +123,7 @@ pub struct MessageInfo {
     pub media_width: Option<u32>,
     pub media_height: Option<u32>,
     pub media_size: Option<u64>,
+    pub reactions: Vec<ReactionInfo>,
 }
 
 impl From<CoreMessageInfo> for MessageInfo {
@@ -124,6 +142,7 @@ impl From<CoreMessageInfo> for MessageInfo {
             media_width: m.media_width,
             media_height: m.media_height,
             media_size: m.media_size,
+            reactions: m.reactions.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -393,6 +412,14 @@ impl ParlotteClientFFI {
         Ok(self.inner.redact_message(&room_id, &event_id)?)
     }
 
+    pub fn send_reaction(&self, room_id: String, event_id: String, key: String) -> Result<String, ParlotteError> {
+        Ok(self.inner.send_reaction(&room_id, &event_id, &key)?)
+    }
+
+    pub fn redact_reaction(&self, room_id: String, reaction_event_id: String) -> Result<(), ParlotteError> {
+        Ok(self.inner.redact_reaction(&room_id, &reaction_event_id)?)
+    }
+
     pub fn login_methods(&self) -> Result<LoginMethods, ParlotteError> {
         Ok(self.inner.login_methods()?.into())
     }
@@ -481,6 +508,7 @@ mod tests {
             media_width: None,
             media_height: None,
             media_size: None,
+            reactions: vec![],
         };
         let ffi: MessageInfo = core.into();
         assert_eq!(ffi.event_id, "$evt:example.com");
@@ -509,6 +537,7 @@ mod tests {
             media_width: None,
             media_height: None,
             media_size: None,
+            reactions: vec![],
         };
         let ffi: MessageInfo = core.into();
         assert!(ffi.formatted_body.is_none());
@@ -533,6 +562,7 @@ mod tests {
             media_width: Some(1920),
             media_height: Some(1080),
             media_size: Some(204800),
+            reactions: vec![],
         };
         let ffi: MessageInfo = core.into();
         assert_eq!(ffi.media_source.as_deref(), Some("mxc://example.com/abc123"));
@@ -540,6 +570,56 @@ mod tests {
         assert_eq!(ffi.media_width, Some(1920));
         assert_eq!(ffi.media_height, Some(1080));
         assert_eq!(ffi.media_size, Some(204800));
+    }
+
+    // -- ReactionInfo round-trip --
+
+    #[test]
+    fn reaction_info_converts_all_fields() {
+        let core = CoreReactionInfo {
+            event_id: "$reaction:example.com".into(),
+            key: "\u{1f44d}".into(),
+            sender: "@alice:example.com".into(),
+        };
+        let ffi: ReactionInfo = core.into();
+        assert_eq!(ffi.event_id, "$reaction:example.com");
+        assert_eq!(ffi.key, "\u{1f44d}");
+        assert_eq!(ffi.sender, "@alice:example.com");
+    }
+
+    #[test]
+    fn message_info_converts_reactions() {
+        let core = CoreMessageInfo {
+            event_id: "$msg:example.com".into(),
+            sender: "@bob:example.com".into(),
+            body: "Hello".into(),
+            formatted_body: None,
+            message_type: "text".into(),
+            timestamp_ms: 1700000000000,
+            is_edited: false,
+            replied_to_event_id: None,
+            media_source: None,
+            media_mime_type: None,
+            media_width: None,
+            media_height: None,
+            media_size: None,
+            reactions: vec![
+                CoreReactionInfo {
+                    event_id: "$r1:example.com".into(),
+                    key: "\u{1f44d}".into(),
+                    sender: "@alice:example.com".into(),
+                },
+                CoreReactionInfo {
+                    event_id: "$r2:example.com".into(),
+                    key: "\u{2764}\u{fe0f}".into(),
+                    sender: "@carol:example.com".into(),
+                },
+            ],
+        };
+        let ffi: MessageInfo = core.into();
+        assert_eq!(ffi.reactions.len(), 2);
+        assert_eq!(ffi.reactions[0].key, "\u{1f44d}");
+        assert_eq!(ffi.reactions[1].sender, "@carol:example.com");
     }
 
     // -- MessageBatch round-trip --
@@ -561,6 +641,7 @@ mod tests {
                 media_width: None,
                 media_height: None,
                 media_size: None,
+                reactions: vec![],
             }],
             end_token: Some("t47_42_0_1".into()),
         };

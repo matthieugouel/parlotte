@@ -815,4 +815,101 @@ mod tests {
             "downloaded bytes should match what Alice uploaded"
         );
     }
+
+    // -- Test: Send and receive reactions --
+
+    #[test]
+    fn send_and_receive_reaction() {
+        require_synapse();
+        let (alice, _alice_id) = register_and_login("react_alice");
+        let (bob, bob_id) = register_and_login("react_bob");
+
+        let room_id = alice.create_room("Reaction Room", true).unwrap();
+        alice.sync_once().unwrap();
+        alice.invite_user(&room_id, &bob_id).unwrap();
+
+        bob.sync_once().unwrap();
+        bob.join_room(&room_id).unwrap();
+        alice.sync_once().unwrap();
+        bob.sync_once().unwrap();
+
+        // Alice sends a message
+        alice.send_message(&room_id, "React to this!").unwrap();
+        alice.sync_once().unwrap();
+        bob.sync_once().unwrap();
+
+        // Bob finds the message and reacts with thumbs up
+        let bob_msgs = bob.messages(&room_id, 50, None).unwrap().messages;
+        let target = bob_msgs.iter().find(|m| m.body == "React to this!").unwrap();
+        let reaction_event_id = bob
+            .send_reaction(&room_id, &target.event_id, "\u{1f44d}")
+            .expect("bob should be able to react");
+        assert!(reaction_event_id.starts_with('$'), "reaction should return a valid event ID");
+
+        // Both sync
+        alice.sync_once().unwrap();
+        bob.sync_once().unwrap();
+
+        // Alice should see the reaction on the message
+        let alice_msgs = alice.messages(&room_id, 50, None).unwrap().messages;
+        let reacted = alice_msgs.iter().find(|m| m.body == "React to this!").unwrap();
+        assert!(
+            reacted.reactions.iter().any(|r| r.key == "\u{1f44d}"),
+            "Alice should see Bob's thumbs up reaction, got: {:?}",
+            reacted.reactions
+        );
+    }
+
+    #[test]
+    fn redact_reaction() {
+        require_synapse();
+        let (alice, _alice_id) = register_and_login("redact_react_alice");
+        let (bob, bob_id) = register_and_login("redact_react_bob");
+
+        let room_id = alice.create_room("Redact Reaction Room", true).unwrap();
+        alice.sync_once().unwrap();
+        alice.invite_user(&room_id, &bob_id).unwrap();
+
+        bob.sync_once().unwrap();
+        bob.join_room(&room_id).unwrap();
+        alice.sync_once().unwrap();
+        bob.sync_once().unwrap();
+
+        // Alice sends a message
+        alice.send_message(&room_id, "React and unreact").unwrap();
+        alice.sync_once().unwrap();
+        bob.sync_once().unwrap();
+
+        // Bob reacts
+        let bob_msgs = bob.messages(&room_id, 50, None).unwrap().messages;
+        let target = bob_msgs.iter().find(|m| m.body == "React and unreact").unwrap();
+        let reaction_event_id = bob
+            .send_reaction(&room_id, &target.event_id, "\u{2764}\u{fe0f}")
+            .unwrap();
+
+        bob.sync_once().unwrap();
+        alice.sync_once().unwrap();
+
+        // Verify the reaction exists
+        let alice_msgs = alice.messages(&room_id, 50, None).unwrap().messages;
+        let reacted = alice_msgs.iter().find(|m| m.body == "React and unreact").unwrap();
+        assert!(
+            reacted.reactions.iter().any(|r| r.key == "\u{2764}\u{fe0f}"),
+            "reaction should exist before redaction"
+        );
+
+        // Bob redacts the reaction
+        bob.redact_reaction(&room_id, &reaction_event_id).unwrap();
+        bob.sync_once().unwrap();
+        alice.sync_once().unwrap();
+
+        // Alice should no longer see the reaction
+        let alice_msgs = alice.messages(&room_id, 50, None).unwrap().messages;
+        let after = alice_msgs.iter().find(|m| m.body == "React and unreact").unwrap();
+        assert!(
+            !after.reactions.iter().any(|r| r.key == "\u{2764}\u{fe0f}"),
+            "reaction should be gone after redaction, got: {:?}",
+            after.reactions
+        );
+    }
 }

@@ -20,6 +20,8 @@ public protocol MatrixClientProtocol: Sendable {
     func sendReply(roomId: String, eventId: String, body: String) async throws
     func editMessage(roomId: String, eventId: String, newBody: String) async throws
     func redactMessage(roomId: String, eventId: String) async throws
+    func sendReaction(roomId: String, eventId: String, key: String) async throws -> String
+    func redactReaction(roomId: String, reactionEventId: String) async throws
     func sendReadReceipt(roomId: String, eventId: String) async throws
     func sendTypingNotice(roomId: String, isTyping: Bool) async throws
     func sendAttachment(roomId: String, filename: String, mimeType: String, data: Data, width: UInt32?, height: UInt32?) async throws

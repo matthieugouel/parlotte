@@ -8,7 +8,7 @@ use matrix_sdk::{Client, SessionMeta, SessionTokens};
 use std::sync::Arc;
 
 use crate::error::{ParlotteError, Result};
-use crate::message::{LoginMethods, MatrixSessionData, MessageBatch, MessageInfo, SessionInfo, SsoProvider};
+use crate::message::{LoginMethods, MatrixSessionData, MessageBatch, MessageInfo, ReactionInfo, SessionInfo, SsoProvider};
 use crate::room::{PublicRoomInfo, RoomInfo, RoomMemberInfo};
 use crate::sync::{SyncListener, SyncManager};
 
@@ -412,12 +412,32 @@ impl ParlotteClient {
             let mut messages = Vec::new();
             // Track edits: original_event_id -> (new body, new formatted_body)
             let mut edits: HashMap<String, (String, Option<String>)> = HashMap::new();
+            // Track reactions: target_event_id -> Vec<ReactionInfo>
+            let mut reactions_map: HashMap<String, Vec<ReactionInfo>> = HashMap::new();
 
             for event in response.chunk {
                 let raw = event.raw();
                 let Ok(deserialized) = raw.deserialize() else {
                     continue;
                 };
+
+                // Collect m.reaction events
+                if let AnySyncTimelineEvent::MessageLike(
+                    matrix_sdk::ruma::events::AnySyncMessageLikeEvent::Reaction(reaction_event),
+                ) = &deserialized
+                {
+                    if let matrix_sdk::ruma::events::SyncMessageLikeEvent::Original(original) = reaction_event {
+                        let annotation = &original.content.relates_to;
+                        reactions_map
+                            .entry(annotation.event_id.to_string())
+                            .or_default()
+                            .push(ReactionInfo {
+                                event_id: original.event_id.to_string(),
+                                key: annotation.key.clone(),
+                                sender: original.sender.to_string(),
+                            });
+                    }
+                }
 
                 if let AnySyncTimelineEvent::MessageLike(
                     matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(msg),
@@ -465,6 +485,7 @@ impl ParlotteClient {
                         media_width,
                         media_height,
                         media_size,
+                        reactions: vec![],
                     });
                 }
             }
@@ -475,6 +496,13 @@ impl ParlotteClient {
                     msg.body = new_body;
                     msg.formatted_body = new_formatted;
                     msg.is_edited = true;
+                }
+            }
+
+            // Attach reactions to their target messages
+            for msg in &mut messages {
+                if let Some(rxns) = reactions_map.remove(&msg.event_id) {
+                    msg.reactions = rxns;
                 }
             }
 
@@ -552,6 +580,70 @@ impl ParlotteClient {
                 .await
                 .map_err(|e| ParlotteError::Room {
                     message: format!("failed to redact message: {e}"),
+                })?;
+
+            Ok(())
+        })
+    }
+
+    /// Send a reaction (emoji) on a message. Returns the reaction event ID.
+    pub fn send_reaction(&self, room_id: &str, event_id: &str, key: &str) -> Result<String> {
+        use matrix_sdk::ruma::events::reaction::ReactionEventContent;
+        use matrix_sdk::ruma::events::relation::Annotation;
+        use matrix_sdk::ruma::EventId;
+
+        let client = self.client();
+        self.runtime.block_on(async {
+            let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid room ID: {e}"),
+            })?;
+
+            let room = client
+                .get_room(room_id)
+                .ok_or_else(|| ParlotteError::Room {
+                    message: format!("room {room_id} not found"),
+                })?;
+
+            let event_id = <&EventId>::try_from(event_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid event ID: {e}"),
+            })?;
+
+            let content = ReactionEventContent::new(
+                Annotation::new(event_id.to_owned(), key.to_owned()),
+            );
+            let response = room.send(content).await.map_err(|e| ParlotteError::Room {
+                message: format!("failed to send reaction: {e}"),
+            })?;
+
+            Ok(response.event_id.to_string())
+        })
+    }
+
+    /// Redact (remove) a reaction event. The caller must pass the event ID
+    /// of the m.reaction event, not the target message.
+    pub fn redact_reaction(&self, room_id: &str, reaction_event_id: &str) -> Result<()> {
+        use matrix_sdk::ruma::EventId;
+
+        let client = self.client();
+        self.runtime.block_on(async {
+            let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid room ID: {e}"),
+            })?;
+
+            let room = client
+                .get_room(room_id)
+                .ok_or_else(|| ParlotteError::Room {
+                    message: format!("room {room_id} not found"),
+                })?;
+
+            let event_id = <&EventId>::try_from(reaction_event_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid event ID: {e}"),
+            })?;
+
+            room.redact(event_id, None, None)
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to redact reaction: {e}"),
                 })?;
 
             Ok(())
@@ -1415,6 +1507,47 @@ mod tests {
         let result = client.restore_session(data);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ParlotteError::Auth { .. }));
+    }
+
+    #[test]
+    fn send_reaction_rejects_invalid_room_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.send_reaction("bad-room", "$event:example.com", "👍");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
+    }
+
+    #[test]
+    fn send_reaction_rejects_nonexistent_room() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.send_reaction("!room:example.com", "$event:example.com", "👍");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn send_reaction_rejects_invalid_event_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.send_reaction("!room:example.com", "bad-event", "👍");
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("invalid event ID") || err_msg.contains("not found"));
+    }
+
+    #[test]
+    fn redact_reaction_rejects_invalid_room_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.redact_reaction("bad-room", "$reaction:example.com");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
+    }
+
+    #[test]
+    fn redact_reaction_rejects_nonexistent_room() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.redact_reaction("!room:example.com", "$reaction:example.com");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
     }
 
     // Note: SQLite store path testing is covered in integration tests because

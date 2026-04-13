@@ -14,6 +14,11 @@ err() { echo -e "${RED}[build-apple]${NC} $*" >&2; }
 
 cd "$REPO_ROOT"
 
+# Match the deployment target to the Swift package's minimum (macOS 14).
+# Without this, the Rust lib inherits the host SDK version, causing
+# "built for newer macOS" linker warnings when linking into the app.
+export MACOSX_DEPLOYMENT_TARGET="14.0"
+
 # Step 1: Build Rust static library
 log "Building Rust static library ($BUILD_MODE, $TARGET_TRIPLE)..."
 if [ "$BUILD_MODE" = "debug" ]; then

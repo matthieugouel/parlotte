@@ -274,6 +274,7 @@ public final class AppState {
                 if let serverMsg = serverById[messages[i].eventId] {
                     if messages[i].body != serverMsg.body
                         || messages[i].isEdited != serverMsg.isEdited
+                        || messages[i].reactions != serverMsg.reactions
                     {
                         messages[i] = serverMsg
                         changed = true
@@ -330,7 +331,8 @@ public final class AppState {
             mediaMimeType: nil,
             mediaWidth: nil,
             mediaHeight: nil,
-            mediaSize: nil
+            mediaSize: nil,
+            reactions: []
         )
     }
 
@@ -396,7 +398,8 @@ public final class AppState {
             mediaMimeType: mimeType,
             mediaWidth: width,
             mediaHeight: height,
-            mediaSize: UInt64(data.count)
+            mediaSize: UInt64(data.count),
+            reactions: []
         )
         messages.append(placeholder)
         pendingAttachments[placeholder.eventId] = data
@@ -522,6 +525,56 @@ public final class AppState {
         } catch {
             messages.removeAll { $0.eventId == placeholder.eventId }
             errorMessage = error.localizedDescription
+        }
+    }
+
+    public func toggleReaction(eventId: String, key: String) async {
+        guard let client, let roomId = selectedRoomId else { return }
+        guard let msgIdx = messages.firstIndex(where: { $0.eventId == eventId }) else { return }
+
+        // Check if user already reacted with this key
+        let existingReaction = messages[msgIdx].reactions.first(where: {
+            $0.key == key && $0.sender == loggedInUserId
+        })
+
+        if let existing = existingReaction {
+            // Optimistic remove
+            messages[msgIdx].reactions.removeAll { $0.eventId == existing.eventId }
+            do {
+                try await client.redactReaction(roomId: roomId, reactionEventId: existing.eventId)
+            } catch {
+                // Revert: re-add the reaction
+                if let idx = messages.firstIndex(where: { $0.eventId == eventId }) {
+                    messages[idx].reactions.append(existing)
+                }
+                errorMessage = error.localizedDescription
+            }
+        } else {
+            // Optimistic add
+            let optimisticReaction = ReactionInfo(
+                eventId: "~optimistic:\(UUID().uuidString)",
+                key: key,
+                sender: loggedInUserId ?? ""
+            )
+            messages[msgIdx].reactions.append(optimisticReaction)
+            do {
+                let realEventId = try await client.sendReaction(roomId: roomId, eventId: eventId, key: key)
+                // Replace optimistic with real event ID
+                if let idx = messages.firstIndex(where: { $0.eventId == eventId }),
+                   let rIdx = messages[idx].reactions.firstIndex(where: { $0.eventId == optimisticReaction.eventId }) {
+                    messages[idx].reactions[rIdx] = ReactionInfo(
+                        eventId: realEventId,
+                        key: key,
+                        sender: loggedInUserId ?? ""
+                    )
+                }
+            } catch {
+                // Revert
+                if let idx = messages.firstIndex(where: { $0.eventId == eventId }) {
+                    messages[idx].reactions.removeAll { $0.eventId == optimisticReaction.eventId }
+                }
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
