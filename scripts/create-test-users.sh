@@ -73,18 +73,19 @@ log "Synapse is ready."
 register() {
     local username="$1"
     local body
-    body=$(curl -fsS -X POST "$HOMESERVER/_matrix/client/v3/register" \
+    # No -f: we want the response body on non-2xx so we can distinguish
+    # "already exists" (M_USER_IN_USE, 400) from real failures.
+    body=$(curl -sS -X POST "$HOMESERVER/_matrix/client/v3/register" \
         -H 'Content-Type: application/json' \
-        -d "{\"username\":\"$username\",\"password\":\"$PASSWORD\",\"auth\":{\"type\":\"m.login.dummy\"}}" \
-        2>&1) || {
-        if echo "$body" | grep -q 'M_USER_IN_USE'; then
-            warn "  $username already exists — skipping. Pass --reset to re-create."
-            return 0
-        fi
+        -d "{\"username\":\"$username\",\"password\":\"$PASSWORD\",\"auth\":{\"type\":\"m.login.dummy\"}}")
+    if echo "$body" | grep -q '"access_token"'; then
+        log "  registered $username"
+    elif echo "$body" | grep -q 'M_USER_IN_USE'; then
+        warn "  $username already exists — skipping. Pass --reset to re-create."
+    else
         err "  failed to register $username: $body"
         return 1
-    }
-    log "  registered $username"
+    fi
 }
 
 log "Registering users..."
