@@ -6,13 +6,28 @@ import SwiftUI
 @main
 struct ParlotteApp: App {
     @State private var appState: AppState
+    /// Retained so the listener stays alive for the lifetime of the app.
+    private static var debugServer: DebugServer?
 
     init() {
         let profile = Self.parseProfile()
         if CommandLine.arguments.contains("--debug") {
             initLogging(level: "debug")
         }
-        _appState = State(initialValue: AppState(profile: profile))
+        let state = AppState(profile: profile)
+        _appState = State(initialValue: state)
+
+        if let port = Self.parseDebugIpcPort() {
+            let server = DebugServer(appState: state)
+            do {
+                try server.start(port: port)
+                Self.debugServer = server
+                print("Debug IPC server listening on 127.0.0.1:\(port)")
+            } catch {
+                print("Failed to start debug IPC server on port \(port): \(error)")
+            }
+        }
+
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
@@ -32,5 +47,13 @@ struct ParlotteApp: App {
             return args[idx + 1]
         }
         return "default"
+    }
+
+    private static func parseDebugIpcPort() -> UInt16? {
+        let args = CommandLine.arguments
+        if let idx = args.firstIndex(of: "--debug-ipc-port"), idx + 1 < args.count {
+            return UInt16(args[idx + 1])
+        }
+        return nil
     }
 }

@@ -1,0 +1,220 @@
+import Testing
+import ParlotteSDK
+@testable import ParlotteLib
+
+@MainActor
+@Suite("DebugServer")
+struct DebugServerTests {
+    private let appState: AppState
+    private let mock: MockMatrixClient
+    private let server: DebugServer
+    private let client: DebugClient
+
+    init() async throws {
+        mock = MockMatrixClient()
+        appState = AppState(profile: "debug-test")
+        appState.loggedInUserId = "@alice:example.com"
+        appState.client = mock
+
+        server = DebugServer(appState: appState)
+        let port = try server.start(port: 0)
+        client = DebugClient(port: port)
+    }
+
+    // MARK: - Fixtures
+
+    private func makeRoom(id: String = "!room1:example.com", name: String = "General") -> RoomInfo {
+        RoomInfo(
+            id: id,
+            displayName: name,
+            isEncrypted: false,
+            isPublic: true,
+            topic: nil,
+            isInvited: false,
+            unreadCount: 0
+        )
+    }
+
+    private func makeMessage(
+        eventId: String = "$evt1:example.com",
+        body: String = "Hello"
+    ) -> MessageInfo {
+        MessageInfo(
+            eventId: eventId,
+            sender: "@bob:example.com",
+            body: body,
+            formattedBody: nil,
+            messageType: "text",
+            timestampMs: 1_700_000_000_000,
+            isEdited: false,
+            repliedToEventId: nil,
+            mediaSource: nil,
+            mediaMimeType: nil,
+            mediaWidth: nil,
+            mediaHeight: nil,
+            mediaSize: nil,
+            reactions: []
+        )
+    }
+
+    // MARK: - /state
+
+    @Test("GET /state returns a snapshot with core fields")
+    func stateReturnsSnapshot() async throws {
+        appState.rooms = [makeRoom()]
+        appState.isLoggedIn = true
+
+        let (status, body) = try await client.get("/state")
+
+        #expect(status == 200)
+        #expect(body["profile"] as? String == "debug-test")
+        #expect(body["isLoggedIn"] as? Bool == true)
+        #expect(body["loggedInUserId"] as? String == "@alice:example.com")
+        let rooms = body["rooms"] as? [[String: Any]]
+        #expect(rooms?.count == 1)
+        #expect(rooms?.first?["displayName"] as? String == "General")
+    }
+
+    @Test("GET /state reflects messages and typing users")
+    func stateReflectsMessages() async throws {
+        appState.rooms = [makeRoom()]
+        appState.selectedRoomId = "!room1:example.com"
+        await appState.roomRefreshTask?.value
+        appState.messages = [makeMessage(body: "hi there")]
+        appState.typingUsers = ["!room1:example.com": ["@bob:example.com"]]
+
+        let (status, body) = try await client.get("/state")
+
+        #expect(status == 200)
+        let messages = body["messages"] as? [[String: Any]]
+        #expect(messages?.count == 1)
+        #expect(messages?.first?["body"] as? String == "hi there")
+        let typing = body["currentRoomTypingUsers"] as? [String]
+        #expect(typing == ["@bob:example.com"])
+    }
+
+    // MARK: - /cmd select_room
+
+    @Test("POST /cmd select_room by id")
+    func selectRoomById() async throws {
+        appState.rooms = [makeRoom(id: "!alerts:example.com", name: "Alerts")]
+
+        let (status, body) = try await client.post("/cmd", body: [
+            "op": "select_room",
+            "id": "!alerts:example.com"
+        ])
+
+        #expect(status == 200)
+        #expect(body["ok"] as? Bool == true)
+        #expect(appState.selectedRoomId == "!alerts:example.com")
+    }
+
+    @Test("POST /cmd select_room by name")
+    func selectRoomByName() async throws {
+        appState.rooms = [
+            makeRoom(id: "!a:example.com", name: "Alerts"),
+            makeRoom(id: "!b:example.com", name: "General"),
+        ]
+
+        let (status, body) = try await client.post("/cmd", body: [
+            "op": "select_room",
+            "name": "General"
+        ])
+
+        #expect(status == 200)
+        #expect(body["ok"] as? Bool == true)
+        #expect(appState.selectedRoomId == "!b:example.com")
+    }
+
+    @Test("POST /cmd select_room with unknown room returns 404")
+    func selectRoomUnknown() async throws {
+        appState.rooms = [makeRoom()]
+
+        let (status, body) = try await client.post("/cmd", body: [
+            "op": "select_room",
+            "name": "DoesNotExist"
+        ])
+
+        #expect(status == 404)
+        #expect(body["ok"] as? Bool == false)
+    }
+
+    // MARK: - /cmd send_message
+
+    @Test("POST /cmd send_message appends optimistic placeholder and calls client")
+    func sendMessageAppendsPlaceholder() async throws {
+        appState.selectedRoomId = "!room1:example.com"
+        await appState.roomRefreshTask?.value
+        mock.messagesCalls.removeAll()
+
+        let (status, body) = try await client.post("/cmd", body: [
+            "op": "send_message",
+            "body": "Hello from IPC"
+        ])
+
+        #expect(status == 200)
+        #expect(body["ok"] as? Bool == true)
+        #expect(mock.sendMessageCalls.count == 1)
+        #expect(mock.sendMessageCalls.first?.body == "Hello from IPC")
+        #expect(appState.messages.contains(where: { $0.body == "Hello from IPC" }))
+    }
+
+    @Test("POST /cmd send_message without body returns 400")
+    func sendMessageMissingBody() async throws {
+        let (status, _) = try await client.post("/cmd", body: ["op": "send_message"])
+        #expect(status == 400)
+    }
+
+    // MARK: - /cmd refresh
+
+    @Test("POST /cmd refresh triggers rooms and messages fetch")
+    func refreshCallsClient() async throws {
+        appState.selectedRoomId = "!room1:example.com"
+        await appState.roomRefreshTask?.value
+        mock.messagesCalls.removeAll()
+        mock.roomsResult = [makeRoom(id: "!room1:example.com", name: "RefreshedName")]
+
+        let (status, _) = try await client.post("/cmd", body: ["op": "refresh"])
+
+        #expect(status == 200)
+        #expect(appState.rooms.first?.displayName == "RefreshedName")
+        #expect(mock.messagesCalls.count == 1)
+    }
+
+    // MARK: - /cmd load_older
+
+    @Test("POST /cmd load_older is a no-op without endToken")
+    func loadOlderNoToken() async throws {
+        appState.selectedRoomId = "!room1:example.com"
+        await appState.roomRefreshTask?.value
+        mock.messagesCalls.removeAll()
+
+        let (status, body) = try await client.post("/cmd", body: ["op": "load_older"])
+
+        #expect(status == 200)
+        #expect(body["ok"] as? Bool == true)
+        // No endToken was set, so loadMoreMessages is a no-op.
+        #expect(mock.messagesCalls.isEmpty)
+    }
+
+    // MARK: - /cmd errors
+
+    @Test("POST /cmd with unknown op returns 400")
+    func unknownOp() async throws {
+        let (status, body) = try await client.post("/cmd", body: ["op": "totally_fake"])
+        #expect(status == 400)
+        #expect((body["error"] as? String)?.contains("totally_fake") == true)
+    }
+
+    @Test("POST /cmd with invalid JSON returns 400")
+    func invalidJson() async throws {
+        let status = try await client.postText("/cmd", text: "not json")
+        #expect(status == 400)
+    }
+
+    @Test("Unknown path returns 404")
+    func unknownPath() async throws {
+        let (status, _) = try await client.get("/nope")
+        #expect(status == 404)
+    }
+}

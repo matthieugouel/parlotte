@@ -1,5 +1,5 @@
 ---
-description: Test the Parlotte macOS app UI using osascript accessibility APIs and screenshots — without requiring computer-use MCP or Xcode UI tests
+description: Test the Parlotte macOS app UI via a JSON IPC endpoint (fastest), the ax-inspect accessibility tool (for real UI events), or osascript as a last resort
 match:
   - test ui
   - test the app
@@ -12,280 +12,187 @@ match:
   - launch the app
 ---
 
-# UI Testing via Accessibility APIs
+# Parlotte UI Testing
 
-The Parlotte macOS app is built with Swift Package Manager (not Xcode), so it runs as a bare binary without a `.app` bundle. This means computer-use MCP cannot target it. Instead, use macOS Accessibility APIs via `osascript` (AppleScript) and `screencapture` for visual verification.
+Three tools, in preference order. **Always reach for the higher tier first.**
 
-## Prerequisites
+| Tier | Tool | Cost | Use for |
+|---|---|---|---|
+| 1 | `curl` → Debug IPC | ~5–20 ms | Anything you can express as "read state" or "call a method on AppState" |
+| 2 | `ax-inspect` | ~300–500 ms | Real UI events that must go through the view layer (clicks, typing, keystrokes, waits) |
+| 3 | `osascript` / `screencapture` | 2–10 s | Only when tiers 1 and 2 can't do it (OAuth browser flows, visual regressions) |
 
-The user must have macOS Accessibility permissions enabled for the terminal/IDE running Claude Code (System Settings > Privacy & Security > Accessibility).
+Tier 1 is usually ~100× cheaper per check than tier 3. Token-wise too: IPC returns structured JSON, not text dumps.
 
-## Fast Accessibility Inspector (`ax-inspect`)
+## Prereqs
 
-A compiled Swift tool at `.claude/skills/ax-inspect` provides 10x faster UI inspection than osascript. Compile once, then use:
+- macOS Accessibility permissions for the terminal (System Settings → Privacy & Security → Accessibility). Needed only for tier 2/3.
+- `ax-inspect` is a compiled Swift binary at `.claude/skills/ax-inspect`. Rebuild after editing:
+  ```bash
+  swiftc .claude/skills/ax-inspect.swift -o .claude/skills/ax-inspect \
+    -framework AppKit -framework ApplicationServices
+  ```
 
-```bash
-# Compile (only needed once after editing the source)
-swiftc .claude/skills/ax-inspect.swift -o .claude/skills/ax-inspect -framework AppKit -framework ApplicationServices
+## Launching
 
-# Commands:
-.claude/skills/ax-inspect dump                          # All text elements
-.claude/skills/ax-inspect first 15                      # First N text elements
-.claude/skills/ax-inspect find "Load older"             # Search for text
-.claude/skills/ax-inspect click-button 700 270 1400 310 # Click button in coordinate range
-.claude/skills/ax-inspect select "Alerts"               # Select a room by name
-```
-
-**Prefer `ax-inspect` over `osascript` for all UI inspection.** It runs in ~0.4s vs 5-10s for osascript. The osascript examples below are kept as reference but should only be used as fallback.
-
-## Launching the App
+Always launch with the debug IPC port so tier 1 is available:
 
 ```bash
-cd /Users/matthieugouel/Documents/Code/parlotte/apple/Parlotte && swift run Parlotte 2>&1 &
+cd /Users/matthieugouel/Documents/Code/parlotte/apple/Parlotte && \
+  swift run Parlotte --debug-ipc-port 9999 > /tmp/parlotte.log 2>&1 &
 ```
 
-Run this in background. The app retains session state, so if the user was previously logged in, it will restore the session automatically. If not, the user will need to authenticate manually (especially for OAuth/SSO flows).
+Session state is persisted per profile, so if the user was logged in last time, the app restores automatically. For multi-instance testing: `--profile alice` / `--profile bob` use separate stores.
 
-## Core Accessibility Commands
-
-All commands use `osascript` with `dangerouslyDisableSandbox: true`.
-
-### Check if the app is running
+Wait for the app to be ready before interacting:
 
 ```bash
-pgrep -la Parlotte
+.claude/skills/ax-inspect wait-for "General" 10    # or any known room name
 ```
 
-### Get the full UI element tree (roles and values)
+---
 
-This is the primary inspection tool. It dumps every visible UI element:
+## Tier 1 — Debug IPC (primary)
+
+Base URL: `http://127.0.0.1:9999` (bound to loopback only).
+
+### `GET /state` — full AppState snapshot
+
+Returns JSON with all the fields the UI is rendering:
+
+```
+profile, isLoggedIn, isLoading, isCheckingSession, isSyncActive,
+loggedInUserId, homeserverURL, errorMessage,
+selectedRoomId, rooms[], messages[], hasMoreMessages, isLoadingMoreMessages,
+typingUsers{}, currentRoomTypingUsers[]
+```
+
+Common idioms:
 
 ```bash
-osascript -e '
-tell application "System Events"
-    tell process "Parlotte"
-        tell window 1
-            set allElems to entire contents
-            set output to ""
-            repeat with e in allElems
-                try
-                    set r to role of e
-                    set v to value of e
-                    if v is not missing value and v is not "" then
-                        set output to output & r & ": " & v & linefeed
-                    end if
-                end try
-            end repeat
-            return output
-        end tell
-    end tell
-end tell'
+# Is the expected room selected?
+curl -s http://127.0.0.1:9999/state | jq -r .selectedRoomId
+
+# How many messages are loaded?
+curl -s http://127.0.0.1:9999/state | jq '.messages | length'
+
+# What's the last message body?
+curl -s http://127.0.0.1:9999/state | jq -r '.messages | last | .body'
+
+# Did an error surface?
+curl -s http://127.0.0.1:9999/state | jq -r .errorMessage
+
+# Compact room list
+curl -s http://127.0.0.1:9999/state | jq '.rooms[] | {displayName, unreadCount}'
 ```
 
-### Select a room from the sidebar
+### `POST /cmd` — drive AppState directly
 
-SwiftUI List rows need `set selected of e to true`, not `click`:
+Request body is `{"op": "...", ...args}`. Response is `{"ok": true}` or `{"ok": false, "error": "..."}`.
+
+| op | args | Effect |
+|---|---|---|
+| `select_room` | `id` **or** `name` | Sets `selectedRoomId`, triggers message refresh |
+| `send_message` | `body` | Awaits full send (optimistic + server confirm) |
+| `load_older` | — | Pagination; no-op if no endToken |
+| `refresh` | — | `refreshRooms` + `refreshMessages` if a room is selected |
+| `logout` | — | Full logout + store clear |
 
 ```bash
-osascript -e '
-tell application "System Events"
-    tell process "Parlotte"
-        tell window 1
-            set allElems to entire contents
-            repeat with e in allElems
-                try
-                    if role of e is "AXRow" then
-                        set rowContents to entire contents of e
-                        repeat with rc in rowContents
-                            try
-                                if role of rc is "AXStaticText" and value of rc is "ROOM_NAME_HERE" then
-                                    set selected of e to true
-                                    return "selected"
-                                end if
-                            end try
-                        end repeat
-                    end if
-                end try
-            end repeat
-            return "not found"
-        end tell
-    end tell
-end tell'
+curl -s -d '{"op":"select_room","name":"Alerts"}' http://127.0.0.1:9999/cmd
+curl -s -d '{"op":"send_message","body":"hello"}' http://127.0.0.1:9999/cmd
+curl -s -d '{"op":"load_older"}' http://127.0.0.1:9999/cmd
+curl -s -d '{"op":"refresh"}' http://127.0.0.1:9999/cmd
 ```
 
-Replace `ROOM_NAME_HERE` with the actual room name (e.g., "Alerts", "General").
+**This is the answer to "does the state agree with the UI?"** — `/cmd` mutates, then `/state` proves it.
 
-### Scrolling the message list
+---
 
-**Important:** The message list uses an `NSScrollView` wrapped in `NSViewRepresentable`. Its scrollbar may NOT be exposed through accessibility (the only accessible scrollbar is the sidebar's). Instead, verify scroll state by checking which messages are visible in the UI tree.
+## Tier 2 — `ax-inspect` (real UI events)
 
-To check visible messages after an action, dump the first N text elements (items 7+ skip the header):
+For anything the IPC can't do: clicking buttons, typing into fields, sending keystrokes, waiting for visible text.
 
 ```bash
-osascript -e '
-tell application "System Events"
-    tell process "Parlotte"
-        tell window 1
-            set allElems to entire contents
-            set texts to {}
-            repeat with e in allElems
-                try
-                    if role of e is "AXStaticText" and value of e is not missing value and value of e is not "" then
-                        set end of texts to value of e
-                    end if
-                end try
-            end repeat
-            set cnt to count of texts
-            set output to "total: " & cnt & linefeed
-            -- Items 1-6 are header (room name, user, server, room list)
-            -- Items 7+ are message content
-            set maxShow to 15
-            if cnt < maxShow then set maxShow to cnt
-            repeat with i from 7 to maxShow
-                set output to output & i & ": " & item i of texts & linefeed
-            end repeat
-            return output
-        end tell
-    end tell
-end tell'
+alias ax='.claude/skills/ax-inspect'
 ```
 
-**Note:** Accessibility may only report elements near the viewport, not the full list. The total count can vary based on scroll position.
+### Commands
 
-### Search for a specific text in the UI
+| Command | What it does |
+|---|---|
+| `dump` | All text/button/field elements with their role and value |
+| `first N` | First N text elements (header first, then content) |
+| `find TEXT` | Case-insensitive text search; exits 1 if nothing matches |
+| `tree [--json]` | Full accessibility tree. `--json` → pretty JSON, easier to parse |
+| `wait-for TEXT [TIMEOUT]` | Poll every 100 ms until TEXT appears (default 5 s). Exit 0 match / 1 timeout |
+| `select ROOM` | Select a sidebar row by exact displayed name |
+| `click-text LABEL` | Click the first AXButton whose title/description contains LABEL |
+| `click-button X1 Y1 X2 Y2` | Click the first AXButton in a bounding box (last resort) |
+| `set-field QUERY VALUE` | Set an AXTextField/AXTextArea whose title/desc/placeholder contains QUERY |
+| `type VALUE` | Set VALUE on the currently focused editable element |
+| `press KEY` | Send a key. Modifiers allowed: `cmd+k`, `shift+tab`, `ctrl+alt+a`. Keys: return, escape, tab, space, delete, up/down/left/right, home/end, pageup/pagedown, a-z, 0-9 |
 
-Useful for checking if a button label or message exists:
+### Common patterns
 
 ```bash
-osascript -e '
-tell application "System Events"
-    tell process "Parlotte"
-        tell window 1
-            set allElems to entire contents
-            repeat with e in allElems
-                try
-                    set v to value of e
-                    if v is not missing value and v contains "SEARCH_TEXT" then
-                        return "FOUND: " & v
-                    end if
-                end try
-            end repeat
-            return "Not found"
-        end tell
-    end tell
-end tell'
+# Set the message composer and submit via the Send button.
+# set-field types via real keystrokes so SwiftUI @State updates.
+# NOTE: The composer is a multi-line TextField — press return inserts a
+#       newline, it does NOT submit. Use click-text "Send" instead.
+ax set-field "Send a message" "hello from the test"
+ax click-text "Send"
+
+# Load older messages (replaces brittle coordinate-based click)
+ax click-text "Load older messages"
+
+# Wait for a specific message to appear after sync
+ax wait-for "Deploy succeeded" 10
+
+# Keyboard shortcuts
+ax press cmd+k          # command palette
+ax press escape          # dismiss modal
+ax press return          # submit (single-line fields only)
 ```
 
-### Click "Load older messages" button
+### When to pick tier 2 over tier 1
 
-The "Load older messages" button is a SwiftUI `Button` with `.plain` style. It does NOT appear as `AXStaticText` — it is an `AXButton` without an accessible label. It sits at the top of the message area. To click it, find buttons by position: the button is horizontally centered in the message area, near the top (y around 280-310, x around 1100-1300 depending on window position).
+| Want to do | Use |
+|---|---|
+| Check the message list | `curl /state | jq` |
+| Send a message | `curl /cmd send_message` |
+| Click a SwiftUI button with no exposed command | `ax click-text` |
+| Fill a form field and submit | `ax set-field` + `ax click-text` (or `ax press return` for single-line fields) |
+| Trigger a keyboard shortcut | `ax press` |
+| Verify a message is rendered (not just in state) | `ax wait-for` (if you need the UI confirmation) |
+
+---
+
+## Typical workflow
 
 ```bash
-osascript -e '
-tell application "System Events"
-    tell process "Parlotte"
-        tell window 1
-            -- Get window position to calculate relative coords
-            set winPos to position of window 1
-            -- The button is in the message area, centered horizontally, near top
-            set allElems to entire contents
-            repeat with e in allElems
-                try
-                    if role of e is "AXButton" then
-                        set p to position of e
-                        -- Message area: x > 700, y between 270-310
-                        if (item 1 of p) > 700 and (item 1 of p) < 1400 and (item 2 of p) > 270 and (item 2 of p) < 310 then
-                            click e
-                            return "clicked button at " & (item 1 of p) & "," & (item 2 of p)
-                        end if
-                    end if
-                end try
-            end repeat
-            return "no matching button found"
-        end tell
-    end tell
-end tell'
+# 1. Launch
+swift run Parlotte --debug-ipc-port 9999 > /tmp/parlotte.log 2>&1 &
+ax wait-for "General" 10
+
+# 2. Drive via IPC
+curl -s -d '{"op":"select_room","name":"General"}' http://127.0.0.1:9999/cmd
+curl -s -d '{"op":"send_message","body":"smoke test"}' http://127.0.0.1:9999/cmd
+
+# 3. Verify via IPC (cheap)
+curl -s http://127.0.0.1:9999/state | jq -r '.messages | last | .body'
+
+# 4. UI event for something IPC can't reach
+ax click-text "Load older messages"
+ax wait-for "2026-03-28" 5   # verify the older date header rendered
 ```
 
-**Note:** The position range depends on window location and size. If the window has moved, adjust the coordinate ranges. Get the window position first with:
-
-```bash
-osascript -e '
-tell application "System Events"
-    tell process "Parlotte"
-        return {position of window 1, size of window 1}
-    end tell
-end tell'
-```
-
-### Click a button by searching for text
-
-Some buttons have text children that can be found. This works for buttons with visible labels:
-
-```bash
-osascript -e '
-tell application "System Events"
-    tell process "Parlotte"
-        tell window 1
-            set allElems to entire contents
-            repeat with e in allElems
-                try
-                    if role of e is "AXStaticText" and value of e is "Button Label Here" then
-                        click e
-                        return "clicked"
-                    end if
-                end try
-            end repeat
-            return "not found"
-        end tell
-    end tell
-end tell'
-```
-
-### Set a text field value (e.g., login form)
-
-```bash
-osascript -e '
-tell application "System Events"
-    tell process "Parlotte"
-        tell group 1 of window 1
-            set value of text field 1 to "https://matrix.nxthdr.dev"
-        end tell
-    end tell
-end tell'
-```
-
-## Taking Screenshots
-
-Use `screencapture` to take a screenshot, then `Read` to view it:
-
-```bash
-screencapture -x $TMPDIR/parlotte_screenshot.png
-```
-
-Then use the Read tool on the resulting file to view it. The `-x` flag suppresses the shutter sound.
-
-## Typical Testing Workflow
-
-1. **Build**: `cd apple/Parlotte && swift build`
-2. **Launch**: `swift run Parlotte` (in background)
-3. **Wait**: A few seconds for the app to load
-4. **Inspect**: Dump UI tree to see current state
-5. **Navigate**: Select a room via the row selection command
-6. **Wait**: A few seconds for messages to load
-7. **Verify**: Search for specific text, check scroll position, take screenshot
-8. **Interact**: Scroll up/down, click buttons
-9. **Re-verify**: Check state after interaction
-
-## Rebuilding and Relaunching
-
-After code changes, kill the old instance and relaunch:
+## Rebuilding and relaunching
 
 ```bash
 kill $(pgrep Parlotte) 2>/dev/null
-cd /Users/matthieugouel/Documents/Code/parlotte/apple/Parlotte && swift build 2>&1
-# Then relaunch
-swift run Parlotte 2>&1 &
+cd /Users/matthieugouel/Documents/Code/parlotte/apple/Parlotte && swift build
+swift run Parlotte --debug-ipc-port 9999 > /tmp/parlotte.log 2>&1 &
 ```
 
 If Rust code changed, rebuild the XCFramework first:
@@ -294,9 +201,36 @@ If Rust code changed, rebuild the XCFramework first:
 ./scripts/build-apple.sh
 ```
 
+---
+
+## Tier 3 — fallbacks (only when tiers 1–2 can't do it)
+
+### OAuth / SSO browser login
+
+IPC can't drive a browser. For SSO flows, the user must complete the browser-side login manually, or you can pre-seed a session in the profile's store.
+
+### Screenshot (visual verification)
+
+```bash
+screencapture -x $TMPDIR/parlotte.png
+```
+
+Then `Read` the resulting PNG. Only use when a visual regression matters and neither `/state` nor `ax-inspect` can express the check — screenshots are the most token-expensive option.
+
+### Raw osascript
+
+Reserved for attributes that `ax-inspect` doesn't expose. Example — window position/size:
+
+```bash
+osascript -e 'tell application "System Events" to tell process "Parlotte" to return {position of window 1, size of window 1}'
+```
+
+Per-element traversal via osascript (5–10 s per call) is obsolete — `ax-inspect tree --json` is strictly better.
+
+---
+
 ## Limitations
 
-- **OAuth/SSO login**: Cannot be automated — requires user interaction in the browser
-- **SwiftUI accessibility**: Some elements may not have accessible names/labels. Use position or parent-child traversal as fallback
-- **Timing**: After selecting a room or triggering an action, wait 2-3 seconds before inspecting. Run inspection commands with `run_in_background: true` if needed
-- **Long commands**: osascript that traverses the full UI tree can take a few seconds for rooms with many messages
+- OAuth/SSO login can't be automated (browser handoff).
+- IPC surface is intentionally small — extend `DebugServer.handleCommand` in `apple/Parlotte/Sources/ParlotteLib/Debug/DebugServer.swift` when a new flow needs an op.
+- `ax-inspect type` needs a pre-focused editable element. Prefer `set-field` for the common case (find + set in one shot).

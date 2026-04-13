@@ -56,6 +56,9 @@
 - [x] Integration tests against real Synapse (Docker)
 - [x] FFI round-trip tests (type conversions, error mapping)
 - [x] Swift state management tests (optimistic updates, failure revert, dedup)
+- [x] AppState edge-case coverage (pagination guards, invite/create error paths, delete revert)
+- [x] Debug IPC server (`--debug-ipc-port`) for AI-driven UI testing
+- [x] DebugServer test suite (state snapshots, command dispatch, error paths)
+- [x] `ax-inspect` accessibility driver (real keystroke typing, button clicks, field input, wait-for)
 - [ ] CI pipeline (GitHub Actions: build, test, clippy, fmt)
 - [ ] Persistent sync loop integration test (start sync, receive callback, stop)
-- [ ] Automated UI smoke test (XCUITest: launch, login, send message)

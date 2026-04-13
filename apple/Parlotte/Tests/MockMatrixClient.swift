@@ -21,6 +21,9 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var downloadMediaCalls: [String] = []
     var messagesCalls: [(roomId: String, limit: UInt64, from: String?)] = []
     var leaveRoomCalls: [String] = []
+    var inviteUserCalls: [(roomId: String, userId: String)] = []
+    var createRoomCalls: [(name: String, isPublic: Bool)] = []
+    var publicRoomsCalls = 0
     var stopSyncCalls = 0
     var logoutCalls = 0
 
@@ -48,6 +51,11 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var messagesError: Error?
     var roomsError: Error?
     var leaveRoomError: Error?
+    var inviteUserError: Error?
+    var createRoomError: Error?
+    var createRoomResult: String = "!new:example.com"
+    var publicRoomsError: Error?
+    var publicRoomsResult: [PublicRoomInfo] = []
 
     private func errorFor(_ specific: Error?) throws {
         if let err = specific ?? shouldThrow { throw err }
@@ -140,11 +148,22 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     func session() async -> MatrixSessionData? { nil }
     func restoreSession(_ sessionData: MatrixSessionData) async throws {}
     func syncOnce() async throws {}
-    func createRoom(name: String, isPublic: Bool) async throws -> String { "!new:example.com" }
-    func publicRooms() async throws -> [PublicRoomInfo] { [] }
+    func createRoom(name: String, isPublic: Bool) async throws -> String {
+        try errorFor(createRoomError)
+        createRoomCalls.append((name, isPublic))
+        return createRoomResult
+    }
+    func publicRooms() async throws -> [PublicRoomInfo] {
+        try errorFor(publicRoomsError)
+        publicRoomsCalls += 1
+        return publicRoomsResult
+    }
     func joinRoom(roomId: String) async throws {}
     func roomMembers(roomId: String) async throws -> [RoomMemberInfo] { [] }
-    func inviteUser(roomId: String, userId: String) async throws {}
+    func inviteUser(roomId: String, userId: String) async throws {
+        try errorFor(inviteUserError)
+        inviteUserCalls.append((roomId, userId))
+    }
     func loginMethods() async throws -> LoginMethods {
         LoginMethods(supportsPassword: true, supportsSso: false, ssoProviders: [])
     }
