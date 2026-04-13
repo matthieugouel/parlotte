@@ -41,7 +41,7 @@
 ## UX
 - [x] Unread indicators / notification badges
 - [x] Read receipts (mark rooms as read)
-- [ ] User profile (display name, avatar)
+- [x] User profile (display name, avatar)
 - [ ] Light & dark mode
 - [ ] Search (messages, rooms)
 

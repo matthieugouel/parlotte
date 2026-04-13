@@ -15,6 +15,11 @@ public final class AppState {
     public var loggedInUserId: String?
     public var isSyncActive = false
 
+    // User profile
+    public var displayName: String?
+    public var avatarUrl: String?
+    public var isUpdatingProfile = false
+
     public var rooms: [RoomInfo] = []
     public var selectedRoomId: String? {
         didSet {
@@ -27,6 +32,7 @@ public final class AppState {
             messages = []
             messageEndToken = nil
             hasMoreMessages = false
+            memberProfiles = [:]
             if let roomId = selectedRoomId {
                 // Optimistically clear unread count immediately
                 if let idx = rooms.firstIndex(where: { $0.id == roomId }) {
@@ -34,6 +40,7 @@ public final class AppState {
                 }
                 roomRefreshTask = Task {
                     await refreshMessages()
+                    await refreshMemberProfiles()
                     await sendReadReceiptForLatestMessage()
                 }
             }
@@ -46,6 +53,10 @@ public final class AppState {
     public var hasMoreMessages = false
     public var isLoadingMoreMessages = false
     private var messageEndToken: String?
+
+    /// Member profiles for the selected room: userId -> (displayName, avatarUrl).
+    /// Populated automatically when a room is selected.
+    public var memberProfiles: [String: (displayName: String?, avatarUrl: String?)] = [:]
 
     /// Maps room ID to the list of user IDs currently typing (excluding own user).
     public var typingUsers: [String: [String]] = [:]
@@ -129,6 +140,7 @@ public final class AppState {
             isLoggedIn = true
             isSyncActive = true
             try await client.syncOnce()
+            await fetchProfile()
             await refreshRooms()
             startSyncLoop()
         } catch {
@@ -155,6 +167,7 @@ public final class AppState {
             isLoggedIn = true
             isSyncActive = true
             try await client.syncOnce()
+            await fetchProfile()
             await refreshRooms()
             startSyncLoop()
         } catch {
@@ -186,6 +199,7 @@ public final class AppState {
             isSyncActive = true
             isCheckingSession = false
             try await client.syncOnce()
+            await fetchProfile()
             await refreshRooms()
             startSyncLoop()
         } catch {
@@ -202,7 +216,10 @@ public final class AppState {
         client = nil
         isLoggedIn = false
         loggedInUserId = nil
+        displayName = nil
+        avatarUrl = nil
         rooms = []
+        memberProfiles = [:]
         typingUsers = [:]
         selectedRoomId = nil
         pendingAttachments.removeAll()
@@ -650,6 +667,143 @@ public final class AppState {
         }
     }
 
+    // MARK: - Member Profiles
+
+    /// Fetch member profiles for the selected room (display names + avatar URLs).
+    public func refreshMemberProfiles() async {
+        guard let client, let roomId = selectedRoomId else { return }
+        do {
+            let members = try await client.roomMembers(roomId: roomId)
+            var profiles: [String: (displayName: String?, avatarUrl: String?)] = [:]
+            for m in members {
+                profiles[m.userId] = (displayName: m.displayName, avatarUrl: m.avatarUrl)
+            }
+            // Own local profile always wins — server view may lag behind a
+            // recent setAvatar/setDisplayName call.
+            if let ownId = loggedInUserId {
+                profiles[ownId] = (displayName: displayName, avatarUrl: avatarUrl)
+            }
+            // Only update if still on the same room
+            if selectedRoomId == roomId {
+                memberProfiles = profiles
+            }
+        } catch {
+            // Non-fatal
+        }
+    }
+
+    /// Look up the avatar mxc:// URL for a user in the current room.
+    public func avatarUrl(for userId: String) -> String? {
+        memberProfiles[userId]?.avatarUrl
+    }
+
+    /// Look up display name for a user in the current room.
+    public func memberDisplayName(for userId: String) -> String? {
+        memberProfiles[userId]?.displayName
+    }
+
+    // MARK: - Profile
+
+    public func fetchProfile() async {
+        guard let client else { return }
+        do {
+            let profile = try await client.getProfile()
+            displayName = profile.displayName
+            avatarUrl = profile.avatarUrl
+        } catch {
+            // Non-fatal — profile may not be available yet
+        }
+    }
+
+    public func updateDisplayName(_ name: String) async {
+        guard let client else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let oldName = displayName
+        displayName = trimmed
+        isUpdatingProfile = true
+
+        do {
+            try await client.setDisplayName(name: trimmed)
+            updateOwnMemberProfile()
+        } catch {
+            displayName = oldName
+            errorMessage = error.localizedDescription
+        }
+
+        isUpdatingProfile = false
+    }
+
+    public func updateAvatar(data: Data, mimeType: String) async {
+        guard let client else { return }
+
+        let oldUrl = avatarUrl
+        isUpdatingProfile = true
+
+        do {
+            let mxcUrl = try await client.setAvatar(mimeType: mimeType, data: data)
+            avatarUrl = mxcUrl
+            if let old = oldUrl {
+                mediaCache.removeObject(forKey: old as NSString)
+            }
+            updateOwnMemberProfile()
+        } catch {
+            avatarUrl = oldUrl
+            errorMessage = error.localizedDescription
+        }
+
+        isUpdatingProfile = false
+    }
+
+    public func removeAvatar() async {
+        guard let client else { return }
+
+        let oldUrl = avatarUrl
+        avatarUrl = nil
+        isUpdatingProfile = true
+
+        do {
+            try await client.removeAvatar()
+            if let url = oldUrl {
+                mediaCache.removeObject(forKey: url as NSString)
+            }
+            updateOwnMemberProfile()
+        } catch {
+            avatarUrl = oldUrl
+            errorMessage = error.localizedDescription
+        }
+
+        isUpdatingProfile = false
+    }
+
+    /// Push the current displayName/avatarUrl into the memberProfiles cache
+    /// so message avatars update immediately without waiting for a server round-trip.
+    private func updateOwnMemberProfile() {
+        guard let userId = loggedInUserId else { return }
+        memberProfiles[userId] = (displayName: displayName, avatarUrl: avatarUrl)
+    }
+
+    /// Called from the matrix-sdk sync listener whenever a sync tick brings new
+    /// state from the server. Refreshes rooms, the open room's messages, and
+    /// the member-profile cache so other users' display name/avatar changes are
+    /// picked up without needing to switch rooms.
+    public func handleSyncUpdate() async {
+        await refreshRooms()
+        // Always check for new messages when a room is selected.
+        // Own messages don't increment unreadCount, so we can't gate on it —
+        // the dedup in appendNewMessages handles duplicates.
+        if selectedRoomId != nil {
+            if messages.isEmpty {
+                await refreshMessages()
+            } else {
+                await appendNewMessages()
+            }
+            // Pick up member profile changes (e.g., other users updating avatars)
+            await refreshMemberProfiles()
+        }
+    }
+
     fileprivate func sendReadReceiptForLatestMessage() async {
         guard let roomId = selectedRoomId else { return }
         await sendReadReceipt(roomId: roomId)
@@ -747,18 +901,7 @@ private final class SyncUpdateHandler: ParlotteSyncListener, @unchecked Sendable
 
     func onSyncUpdate() {
         Task { @MainActor [weak appState] in
-            guard let appState else { return }
-            await appState.refreshRooms()
-            // Always check for new messages when a room is selected.
-            // Own messages don't increment unreadCount, so we can't gate
-            // on that — the dedup in appendNewMessages handles duplicates.
-            if appState.selectedRoomId != nil {
-                if appState.messages.isEmpty {
-                    await appState.refreshMessages()
-                } else {
-                    await appState.appendNewMessages()
-                }
-            }
+            await appState?.handleSyncUpdate()
         }
     }
 

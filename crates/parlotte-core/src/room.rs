@@ -39,6 +39,8 @@ pub struct RoomMemberInfo {
     pub user_id: String,
     /// Display name, if set.
     pub display_name: Option<String>,
+    /// The mxc:// URI of the member's avatar, if set.
+    pub avatar_url: Option<String>,
     /// Power level (0-100).
     pub power_level: i64,
     /// Role: "administrator", "moderator", or "member".

@@ -8,7 +8,7 @@ use matrix_sdk::{Client, SessionMeta, SessionTokens};
 use std::sync::Arc;
 
 use crate::error::{ParlotteError, Result};
-use crate::message::{LoginMethods, MatrixSessionData, MessageBatch, MessageInfo, ReactionInfo, SessionInfo, SsoProvider};
+use crate::message::{LoginMethods, MatrixSessionData, MessageBatch, MessageInfo, ReactionInfo, SessionInfo, SsoProvider, UserProfile};
 use crate::room::{PublicRoomInfo, RoomInfo, RoomMemberInfo};
 use crate::sync::{SyncListener, SyncManager};
 
@@ -220,6 +220,84 @@ impl ParlotteClient {
                 })?;
 
             Ok(())
+        })
+    }
+
+    /// Get the profile (display name and avatar URL) of the logged-in user.
+    pub fn get_profile(&self) -> Result<UserProfile> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            let account = client.account();
+            let display_name = account
+                .get_display_name()
+                .await
+                .map_err(|e| ParlotteError::Network {
+                    message: format!("failed to get display name: {e}"),
+                })?;
+            let avatar_url = account
+                .get_avatar_url()
+                .await
+                .map_err(|e| ParlotteError::Network {
+                    message: format!("failed to get avatar URL: {e}"),
+                })?
+                .map(|u| u.to_string());
+
+            Ok(UserProfile {
+                display_name,
+                avatar_url,
+            })
+        })
+    }
+
+    /// Set the display name of the logged-in user.
+    pub fn set_display_name(&self, name: &str) -> Result<()> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            client
+                .account()
+                .set_display_name(Some(name))
+                .await
+                .map_err(|e| ParlotteError::Network {
+                    message: format!("failed to set display name: {e}"),
+                })
+        })
+    }
+
+    /// Upload avatar image data and set it as the logged-in user's avatar.
+    /// `mime_type` must be a valid image media type (e.g. `"image/png"`).
+    /// `data` is the raw image bytes.
+    pub fn set_avatar(&self, mime_type: &str, data: Vec<u8>) -> Result<String> {
+        let mime: mime::Mime = mime_type.parse().map_err(|e: mime::FromStrError| {
+            ParlotteError::Unknown {
+                message: format!("invalid MIME type {mime_type:?}: {e}"),
+            }
+        })?;
+
+        let client = self.client();
+        self.runtime.block_on(async {
+            let mxc_url = client
+                .account()
+                .upload_avatar(&mime, data)
+                .await
+                .map_err(|e| ParlotteError::Network {
+                    message: format!("failed to upload avatar: {e}"),
+                })?;
+
+            Ok(mxc_url.to_string())
+        })
+    }
+
+    /// Remove the logged-in user's avatar.
+    pub fn remove_avatar(&self) -> Result<()> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            client
+                .account()
+                .set_avatar_url(None)
+                .await
+                .map_err(|e| ParlotteError::Network {
+                    message: format!("failed to remove avatar: {e}"),
+                })
         })
     }
 
@@ -1031,6 +1109,7 @@ impl ParlotteClient {
                 .map(|m| RoomMemberInfo {
                     user_id: m.user_id().to_string(),
                     display_name: m.display_name().map(|s| s.to_owned()),
+                    avatar_url: m.avatar_url().map(|u| u.to_string()),
                     power_level: match m.power_level() {
                         matrix_sdk::ruma::events::room::power_levels::UserPowerLevel::Int(n) => n.into(),
                         _ => 100,
@@ -1548,6 +1627,14 @@ mod tests {
         let result = client.redact_reaction("!room:example.com", "$reaction:example.com");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn set_avatar_rejects_invalid_mime() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.set_avatar("not a valid mime", vec![1, 2, 3]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("invalid MIME type"));
     }
 
     // Note: SQLite store path testing is covered in integration tests because

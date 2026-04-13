@@ -6,32 +6,38 @@ struct RoomListView: View {
     @Environment(AppState.self) private var appState
     @State private var showCreateRoom = false
     @State private var showExploreRooms = false
+    @State private var showProfile = false
 
     var body: some View {
         @Bindable var appState = appState
 
         VStack(spacing: 0) {
-            // User header
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    if let userId = appState.loggedInUserId {
-                        Text(localpart(from: userId))
-                            .font(.title3)
-                            .fontWeight(.semibold)
+            // User header (tap to open profile)
+            Button {
+                showProfile = true
+            } label: {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        if let userId = appState.loggedInUserId {
+                            Text(appState.displayName ?? localpart(from: userId))
+                                .font(.title3)
+                                .fontWeight(.semibold)
 
-                        Text(serverName(from: userId))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            Text(serverName(from: userId))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+
+                    Spacer()
+
+                    Circle()
+                        .fill(appState.isSyncActive ? .green : .orange)
+                        .frame(width: 8, height: 8)
+                        .help(appState.isSyncActive ? "Connected" : "Disconnected")
                 }
-
-                Spacer()
-
-                Circle()
-                    .fill(appState.isSyncActive ? .green : .orange)
-                    .frame(width: 8, height: 8)
-                    .help(appState.isSyncActive ? "Connected" : "Disconnected")
             }
+            .buttonStyle(.plain)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
 
@@ -134,6 +140,10 @@ struct RoomListView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
+        }
+        .sheet(isPresented: $showProfile) {
+            ProfileView()
+                .environment(appState)
         }
         .sheet(isPresented: $showCreateRoom) {
             CreateRoomView()

@@ -834,4 +834,343 @@ struct AppStateTests {
 
         #expect(mock.sendReactionCalls.isEmpty)
     }
+
+    // MARK: - Profile
+
+    @Test("Fetch profile sets display name and avatar URL")
+    mutating func fetchProfileSetsState() async {
+        mock.getProfileResult = UserProfile(
+            displayName: "Alice Wonderland",
+            avatarUrl: "mxc://example.com/avatar123"
+        )
+
+        await appState.fetchProfile()
+
+        #expect(appState.displayName == "Alice Wonderland")
+        #expect(appState.avatarUrl == "mxc://example.com/avatar123")
+        #expect(mock.getProfileCalls == 1)
+    }
+
+    @Test("Fetch profile handles nil values")
+    mutating func fetchProfileHandlesNil() async {
+        mock.getProfileResult = UserProfile(displayName: nil, avatarUrl: nil)
+
+        await appState.fetchProfile()
+
+        #expect(appState.displayName == nil)
+        #expect(appState.avatarUrl == nil)
+    }
+
+    @Test("Fetch profile is best-effort")
+    mutating func fetchProfileIsBestEffort() async {
+        mock.getProfileError = ParlotteError.Network(message: "unreachable")
+
+        await appState.fetchProfile()
+
+        #expect(appState.errorMessage == nil, "Profile fetch errors should be swallowed")
+    }
+
+    @Test("Update display name sets optimistically and calls client")
+    mutating func updateDisplayNameOptimistic() async {
+        appState.displayName = "OldName"
+
+        await appState.updateDisplayName("NewName")
+
+        #expect(appState.displayName == "NewName")
+        #expect(mock.setDisplayNameCalls == ["NewName"])
+        #expect(appState.isUpdatingProfile == false)
+    }
+
+    @Test("Update display name reverts on failure")
+    mutating func updateDisplayNameRevertsOnFailure() async {
+        appState.displayName = "OldName"
+        mock.setDisplayNameError = ParlotteError.Network(message: "failed")
+
+        await appState.updateDisplayName("NewName")
+
+        #expect(appState.displayName == "OldName")
+        #expect(appState.errorMessage != nil)
+    }
+
+    @Test("Update display name ignores whitespace-only input")
+    mutating func updateDisplayNameIgnoresWhitespace() async {
+        appState.displayName = "Alice"
+
+        await appState.updateDisplayName("   ")
+
+        #expect(appState.displayName == "Alice")
+        #expect(mock.setDisplayNameCalls.isEmpty)
+    }
+
+    @Test("Update avatar sets URL and calls client")
+    mutating func updateAvatarSetsUrl() async {
+        let data = MediaTestHelpers.bytes([0xFF, 0xD8, 0xFF])
+        mock.setAvatarResult = "mxc://example.com/new_avatar"
+
+        await appState.updateAvatar(data: data, mimeType: "image/jpeg")
+
+        #expect(appState.avatarUrl == "mxc://example.com/new_avatar")
+        #expect(mock.setAvatarCalls.count == 1)
+        #expect(mock.setAvatarCalls[0].mimeType == "image/jpeg")
+        #expect(mock.setAvatarCalls[0].data == data)
+    }
+
+    @Test("Update avatar reverts on failure")
+    mutating func updateAvatarRevertsOnFailure() async {
+        appState.avatarUrl = "mxc://example.com/old"
+        mock.setAvatarError = ParlotteError.Network(message: "upload failed")
+
+        await appState.updateAvatar(data: MediaTestHelpers.bytes([0x00]), mimeType: "image/png")
+
+        #expect(appState.avatarUrl == "mxc://example.com/old")
+        #expect(appState.errorMessage != nil)
+    }
+
+    @Test("Remove avatar clears URL and calls client")
+    mutating func removeAvatarClearsUrl() async {
+        appState.avatarUrl = "mxc://example.com/old"
+
+        await appState.removeAvatar()
+
+        #expect(appState.avatarUrl == nil)
+        #expect(mock.removeAvatarCalls == 1)
+    }
+
+    @Test("Remove avatar reverts on failure")
+    mutating func removeAvatarRevertsOnFailure() async {
+        appState.avatarUrl = "mxc://example.com/old"
+        mock.removeAvatarError = ParlotteError.Network(message: "failed")
+
+        await appState.removeAvatar()
+
+        #expect(appState.avatarUrl == "mxc://example.com/old")
+        #expect(appState.errorMessage != nil)
+    }
+
+    @Test("Logout clears profile state")
+    mutating func logoutClearsProfileState() async {
+        appState.displayName = "Alice"
+        appState.avatarUrl = "mxc://example.com/avatar"
+
+        await appState.logout()
+
+        #expect(appState.displayName == nil)
+        #expect(appState.avatarUrl == nil)
+    }
+
+    // MARK: - Member Profiles
+
+    private func member(
+        _ userId: String,
+        displayName: String? = nil,
+        avatarUrl: String? = nil
+    ) -> RoomMemberInfo {
+        RoomMemberInfo(
+            userId: userId,
+            displayName: displayName,
+            avatarUrl: avatarUrl,
+            powerLevel: 0,
+            role: "member"
+        )
+    }
+
+    @Test("refreshMemberProfiles populates cache from server")
+    mutating func refreshMemberProfilesPopulates() async {
+        mock.roomMembersResult = [
+            member("@alice:example.com", displayName: "Alice", avatarUrl: "mxc://srv/a"),
+            member("@bob:example.com",   displayName: "Bob",   avatarUrl: "mxc://srv/b"),
+        ]
+
+        await appState.refreshMemberProfiles()
+
+        #expect(appState.memberDisplayName(for: "@bob:example.com") == "Bob")
+        #expect(appState.avatarUrl(for: "@bob:example.com") == "mxc://srv/b")
+    }
+
+    @Test("refreshMemberProfiles overlays own local profile over stale server data")
+    mutating func refreshMemberProfilesOwnLocalWins() async {
+        // Local state has the freshest avatar (just updated optimistically).
+        appState.displayName = "Alice (local)"
+        appState.avatarUrl = "mxc://local/new"
+
+        // Server hasn't caught up yet — returns the stale member event.
+        mock.roomMembersResult = [
+            member("@alice:example.com", displayName: "Alice (old)", avatarUrl: "mxc://srv/old"),
+            member("@bob:example.com",   displayName: "Bob",         avatarUrl: "mxc://srv/b"),
+        ]
+
+        await appState.refreshMemberProfiles()
+
+        // Own profile reflects local state, not server's stale view.
+        #expect(appState.avatarUrl(for: "@alice:example.com") == "mxc://local/new")
+        #expect(appState.memberDisplayName(for: "@alice:example.com") == "Alice (local)")
+        // Other users still come from server.
+        #expect(appState.avatarUrl(for: "@bob:example.com") == "mxc://srv/b")
+    }
+
+    @Test("Sync update refreshes member profiles — picks up remote avatar changes")
+    mutating func syncUpdatePicksUpRemoteAvatarChange() async {
+        // Initial state: Bob has avatar A.
+        mock.roomMembersResult = [member("@bob:example.com", avatarUrl: "mxc://srv/old")]
+        await appState.refreshMemberProfiles()
+        #expect(appState.avatarUrl(for: "@bob:example.com") == "mxc://srv/old")
+
+        // Bob updates his avatar — sync brings the new state.
+        mock.roomMembersResult = [member("@bob:example.com", avatarUrl: "mxc://srv/new")]
+
+        await appState.handleSyncUpdate()
+
+        // Cache should reflect the new avatar without needing to switch rooms.
+        #expect(appState.avatarUrl(for: "@bob:example.com") == "mxc://srv/new")
+    }
+
+    @Test("Sync update does not fetch members when no room is selected")
+    mutating func syncUpdateSkipsMembersWhenNoRoom() async {
+        appState.selectedRoomId = nil
+        await appState.roomRefreshTask?.value
+        mock.roomMembersCalls.removeAll()
+
+        await appState.handleSyncUpdate()
+
+        #expect(mock.roomMembersCalls.isEmpty)
+    }
+
+    @Test("Update avatar populates own member profile entry")
+    mutating func updateAvatarPopulatesOwnMemberProfile() async {
+        mock.setAvatarResult = "mxc://example.com/fresh"
+
+        await appState.updateAvatar(
+            data: MediaTestHelpers.bytes([0xFF, 0xD8, 0xFF]),
+            mimeType: "image/jpeg"
+        )
+
+        // The on-screen MemberAvatar reads from memberProfiles, not avatarUrl —
+        // so updating the cache is what makes own messages reflect the new avatar
+        // immediately, without waiting for a round-trip.
+        #expect(appState.avatarUrl(for: "@alice:example.com") == "mxc://example.com/fresh")
+    }
+
+    @Test("Update display name populates own member profile entry")
+    mutating func updateDisplayNamePopulatesOwnMemberProfile() async {
+        await appState.updateDisplayName("Alice 2.0")
+
+        #expect(appState.memberDisplayName(for: "@alice:example.com") == "Alice 2.0")
+    }
+
+    @Test("Selecting a room fetches member profiles")
+    mutating func selectingRoomFetchesMembers() async {
+        // Reset selection state from init.
+        appState.selectedRoomId = nil
+        await appState.roomRefreshTask?.value
+        mock.roomMembersCalls.removeAll()
+        mock.roomMembersResult = [member("@bob:example.com", avatarUrl: "mxc://srv/b")]
+
+        appState.selectedRoomId = "!other:example.com"
+        await appState.roomRefreshTask?.value
+
+        #expect(mock.roomMembersCalls == ["!other:example.com"])
+        #expect(appState.avatarUrl(for: "@bob:example.com") == "mxc://srv/b")
+    }
+
+    // MARK: - Sync update propagation
+
+    @Test("Sync update refreshes rooms — picks up server-side room list changes")
+    mutating func syncUpdateRefreshesRooms() async {
+        // Initial sync brings one room.
+        mock.roomsResult = [RoomInfo(
+            id: "!room:example.com",
+            displayName: "Original",
+            isEncrypted: false,
+            isPublic: true,
+            topic: nil,
+            isInvited: false,
+            unreadCount: 0
+        )]
+        await appState.handleSyncUpdate()
+        #expect(appState.rooms.first?.displayName == "Original")
+
+        // Server changes the room name; next sync tick should reflect it.
+        mock.roomsResult = [RoomInfo(
+            id: "!room:example.com",
+            displayName: "Renamed",
+            isEncrypted: false,
+            isPublic: true,
+            topic: nil,
+            isInvited: false,
+            unreadCount: 0
+        )]
+
+        await appState.handleSyncUpdate()
+
+        #expect(appState.rooms.first?.displayName == "Renamed")
+    }
+
+    @Test("Sync update appends new messages when room has messages")
+    mutating func syncUpdateAppendsNewMessages() async {
+        appState.messages = [makeMessage(eventId: "$old:x.com", body: "Old")]
+        mock.messagesResult = MessageBatch(
+            messages: [
+                makeMessage(eventId: "$old:x.com", body: "Old"),
+                makeMessage(eventId: "$new:x.com", body: "New"),
+            ],
+            endToken: nil
+        )
+
+        await appState.handleSyncUpdate()
+
+        #expect(appState.messages.count == 2)
+        #expect(appState.messages.contains(where: { $0.eventId == "$new:x.com" }))
+    }
+
+    @Test("Sync update falls back to refreshMessages when room is empty")
+    mutating func syncUpdateFallsBackToRefreshForEmptyRoom() async {
+        appState.messages = []
+        mock.messagesResult = MessageBatch(
+            messages: [makeMessage(eventId: "$e1:x.com", body: "History")],
+            endToken: nil
+        )
+
+        await appState.handleSyncUpdate()
+
+        // refreshMessages populates from scratch (appendNewMessages bails on empty).
+        #expect(appState.messages.count == 1)
+        #expect(appState.messages[0].body == "History")
+    }
+
+    // MARK: - Media cache eviction
+
+    @Test("Update avatar evicts old mxc from media cache")
+    mutating func updateAvatarEvictsOldCache() async {
+        let oldMxc = "mxc://example.com/old"
+        appState.avatarUrl = oldMxc
+        // Prime the cache via loadMedia.
+        mock.downloadMediaResult = MediaTestHelpers.stringBytes("old-bytes")
+        _ = await appState.loadMedia(mxcUri: oldMxc)
+        #expect(mock.downloadMediaCalls.count == 1)
+
+        mock.setAvatarResult = "mxc://example.com/new"
+        await appState.updateAvatar(
+            data: MediaTestHelpers.bytes([0xFF]),
+            mimeType: "image/png"
+        )
+
+        // Old URL should no longer be cached: another loadMedia call must
+        // hit the network again. Without eviction, stale pixels linger.
+        _ = await appState.loadMedia(mxcUri: oldMxc)
+        #expect(mock.downloadMediaCalls.count == 2, "old mxc should have been evicted")
+    }
+
+    @Test("Remove avatar evicts old mxc from media cache")
+    mutating func removeAvatarEvictsOldCache() async {
+        let oldMxc = "mxc://example.com/old"
+        appState.avatarUrl = oldMxc
+        mock.downloadMediaResult = MediaTestHelpers.stringBytes("old-bytes")
+        _ = await appState.loadMedia(mxcUri: oldMxc)
+        #expect(mock.downloadMediaCalls.count == 1)
+
+        await appState.removeAvatar()
+
+        _ = await appState.loadMedia(mxcUri: oldMxc)
+        #expect(mock.downloadMediaCalls.count == 2, "old mxc should have been evicted")
+    }
 }

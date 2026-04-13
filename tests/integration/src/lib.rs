@@ -860,6 +860,45 @@ mod tests {
         );
     }
 
+    // -- Test: User profile (display name + avatar) --
+
+    #[test]
+    fn user_profile_display_name_and_avatar() {
+        require_synapse();
+        let (alice, _alice_id) = register_and_login("profile_alice");
+
+        alice.sync_once().unwrap();
+
+        // Initially, profile should have no display name or avatar
+        let profile = alice.get_profile().unwrap();
+        // Display name may or may not be set after registration; avatar should be None
+        assert!(profile.avatar_url.is_none());
+
+        // Set display name
+        alice.set_display_name("Alice Wonderland").unwrap();
+        let profile = alice.get_profile().unwrap();
+        assert_eq!(profile.display_name.as_deref(), Some("Alice Wonderland"));
+
+        // Update display name
+        alice.set_display_name("Alice W.").unwrap();
+        let profile = alice.get_profile().unwrap();
+        assert_eq!(profile.display_name.as_deref(), Some("Alice W."));
+
+        // Upload avatar
+        let avatar_data = tiny_png();
+        let mxc_url = alice.set_avatar("image/png", avatar_data).unwrap();
+        assert!(mxc_url.starts_with("mxc://"), "avatar upload should return mxc URL, got: {mxc_url}");
+
+        let profile = alice.get_profile().unwrap();
+        assert!(profile.avatar_url.is_some());
+        assert!(profile.avatar_url.as_deref().unwrap().starts_with("mxc://"));
+
+        // Remove avatar
+        alice.remove_avatar().unwrap();
+        let profile = alice.get_profile().unwrap();
+        assert!(profile.avatar_url.is_none(), "avatar should be removed");
+    }
+
     #[test]
     fn redact_reaction() {
         require_synapse();

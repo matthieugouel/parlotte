@@ -388,79 +388,83 @@ struct MessageBubble: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 8) {
-                Text(senderName)
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 10) {
+            // Avatar
+            MemberAvatar(userId: message.sender, size: 32)
 
-                Text(formattedTime)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text(appState.memberDisplayName(for: message.sender) ?? senderName)
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
 
-                if message.isEdited {
-                    Text("(edited)")
+                    Text(formattedTime)
                         .font(.caption)
                         .foregroundStyle(.tertiary)
-                }
 
-                Spacer()
-
-                if (isHovered || showReactionPicker) && !isEditing {
-                    HStack(spacing: 6) {
-                        Button {
-                            onReply()
-                        } label: {
-                            Image(systemName: "arrowshape.turn.up.left")
-                                .font(.body)
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Reply")
-
-                        Button {
-                            showReactionPicker = true
-                        } label: {
-                            Image(systemName: "face.smiling")
-                                .font(.body)
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help("React")
-                        .popover(isPresented: $showReactionPicker) {
-                            ReactionPicker { key in
-                                showReactionPicker = false
-                                onReact(key)
-                            }
-                        }
-
-                        if isOwnMessage {
-                            Button {
-                                editText = message.body
-                                isEditing = true
-                            } label: {
-                                Image(systemName: "pencil")
-                                    .font(.body)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Edit")
-
-                            Button {
-                                showDeleteConfirm = true
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.body)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Delete")
-                        }
+                    if message.isEdited {
+                        Text("(edited)")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
                     }
-                    .transition(.opacity)
+
+                    Spacer()
+
+                    if (isHovered || showReactionPicker) && !isEditing {
+                        HStack(spacing: 6) {
+                            Button {
+                                onReply()
+                            } label: {
+                                Image(systemName: "arrowshape.turn.up.left")
+                                    .font(.body)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Reply")
+
+                            Button {
+                                showReactionPicker = true
+                            } label: {
+                                Image(systemName: "face.smiling")
+                                    .font(.body)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("React")
+                            .popover(isPresented: $showReactionPicker) {
+                                ReactionPicker { key in
+                                    showReactionPicker = false
+                                    onReact(key)
+                                }
+                            }
+
+                            if isOwnMessage {
+                                Button {
+                                    editText = message.body
+                                    isEditing = true
+                                } label: {
+                                    Image(systemName: "pencil")
+                                        .font(.body)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Edit")
+
+                                Button {
+                                    showDeleteConfirm = true
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.body)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Delete")
+                            }
+                        }
+                        .transition(.opacity)
+                    }
                 }
-            }
 
             if let replied = repliedMessage {
                 HStack(spacing: 6) {
@@ -521,7 +525,8 @@ struct MessageBubble: View {
                     onToggle: onReact
                 )
             }
-        }
+            } // end inner VStack
+        } // end HStack
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 5)
         .padding(.horizontal, 4)
@@ -718,6 +723,64 @@ extension RoomDetailView {
     static func calendarDay(_ timestampMs: UInt64) -> DateComponents {
         let date = Date(timeIntervalSince1970: Double(timestampMs) / 1000.0)
         return Calendar.current.dateComponents([.year, .month, .day], from: date)
+    }
+}
+
+// MARK: - Member Avatar
+
+private struct MemberAvatar: View {
+    @Environment(AppState.self) private var appState
+    let userId: String
+    let size: CGFloat
+
+    @State private var avatarImage: NSImage?
+
+    private var initial: String {
+        let name = appState.memberDisplayName(for: userId) ?? localpart(from: userId)
+        return String(name.prefix(1)).uppercased()
+    }
+
+    var body: some View {
+        Group {
+            if let image = avatarImage {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(avatarColor)
+                    Text(initial)
+                        .font(.system(size: size * 0.45, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .task(id: appState.avatarUrl(for: userId)) {
+            guard let mxcUrl = appState.avatarUrl(for: userId) else {
+                avatarImage = nil
+                return
+            }
+            if let data = await appState.loadMedia(mxcUri: mxcUrl) {
+                avatarImage = NSImage(data: data)
+            }
+        }
+    }
+
+    private var avatarColor: Color {
+        // Deterministic color from userId hash
+        let hash = abs(userId.hashValue)
+        let colors: [Color] = [.blue, .purple, .pink, .orange, .teal, .indigo, .mint, .cyan]
+        return colors[hash % colors.count]
+    }
+
+    private func localpart(from userId: String) -> String {
+        if userId.hasPrefix("@"), let colon = userId.firstIndex(of: ":") {
+            return String(userId[userId.index(after: userId.startIndex)..<colon])
+        }
+        return userId
     }
 }
 

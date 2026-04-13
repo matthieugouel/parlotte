@@ -26,6 +26,11 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var publicRoomsCalls = 0
     var stopSyncCalls = 0
     var logoutCalls = 0
+    var getProfileCalls = 0
+    var setDisplayNameCalls: [String] = []
+    var setAvatarCalls: [(mimeType: String, data: Data)] = []
+    var removeAvatarCalls = 0
+    var roomMembersCalls: [String] = []
 
     // MARK: - Configurable behavior
 
@@ -56,6 +61,14 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var createRoomResult: String = "!new:example.com"
     var publicRoomsError: Error?
     var publicRoomsResult: [PublicRoomInfo] = []
+    var getProfileError: Error?
+    var getProfileResult: UserProfile = UserProfile(displayName: nil, avatarUrl: nil)
+    var setDisplayNameError: Error?
+    var setAvatarError: Error?
+    var setAvatarResult: String = "mxc://example.com/avatar123"
+    var removeAvatarError: Error?
+    var roomMembersError: Error?
+    var roomMembersResult: [RoomMemberInfo] = []
 
     private func errorFor(_ specific: Error?) throws {
         if let err = specific ?? shouldThrow { throw err }
@@ -139,6 +152,28 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
         stopSyncCalls += 1
     }
 
+    func getProfile() async throws -> UserProfile {
+        try errorFor(getProfileError)
+        getProfileCalls += 1
+        return getProfileResult
+    }
+
+    func setDisplayName(name: String) async throws {
+        try errorFor(setDisplayNameError)
+        setDisplayNameCalls.append(name)
+    }
+
+    func setAvatar(mimeType: String, data: Data) async throws -> String {
+        try errorFor(setAvatarError)
+        setAvatarCalls.append((mimeType, data))
+        return setAvatarResult
+    }
+
+    func removeAvatar() async throws {
+        try errorFor(removeAvatarError)
+        removeAvatarCalls += 1
+    }
+
     // MARK: - Stubs (not needed for state management tests)
 
     func login(username: String, password: String) async throws -> SessionInfo {
@@ -159,7 +194,11 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
         return publicRoomsResult
     }
     func joinRoom(roomId: String) async throws {}
-    func roomMembers(roomId: String) async throws -> [RoomMemberInfo] { [] }
+    func roomMembers(roomId: String) async throws -> [RoomMemberInfo] {
+        try errorFor(roomMembersError)
+        roomMembersCalls.append(roomId)
+        return roomMembersResult
+    }
     func inviteUser(roomId: String, userId: String) async throws {
         try errorFor(inviteUserError)
         inviteUserCalls.append((roomId, userId))

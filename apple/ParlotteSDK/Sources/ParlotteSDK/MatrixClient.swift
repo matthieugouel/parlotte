@@ -203,6 +203,34 @@ public actor MatrixClient {
         }.value
     }
 
+    public func getProfile() async throws -> UserProfile {
+        let ffi = self.ffi
+        return try await Task.detached {
+            try ffi.getProfile()
+        }.value
+    }
+
+    public func setDisplayName(name: String) async throws {
+        let ffi = self.ffi
+        try await Task.detached {
+            try ffi.setDisplayName(name: name)
+        }.value
+    }
+
+    public func setAvatar(mimeType: String, data: Data) async throws -> String {
+        let ffi = self.ffi
+        return try await Task.detached {
+            try ffi.setAvatar(mimeType: mimeType, data: data)
+        }.value
+    }
+
+    public func removeAvatar() async throws {
+        let ffi = self.ffi
+        try await Task.detached {
+            try ffi.removeAvatar()
+        }.value
+    }
+
     public nonisolated func startSync(listener: ParlotteSyncListener) throws {
         try ffi.startSync(listener: listener)
     }

@@ -22,6 +22,7 @@ use parlotte_core::{
     PublicRoomInfo as CorePublicRoomInfo, ReactionInfo as CoreReactionInfo,
     RoomInfo as CoreRoomInfo, RoomMemberInfo as CoreRoomMemberInfo,
     SessionInfo as CoreSessionInfo, SsoProvider as CoreSsoProvider,
+    UserProfile as CoreUserProfile,
 };
 use std::fmt;
 use std::sync::Arc;
@@ -229,6 +230,7 @@ impl From<CorePublicRoomInfo> for PublicRoomInfo {
 pub struct RoomMemberInfo {
     pub user_id: String,
     pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
     pub power_level: i64,
     pub role: String,
 }
@@ -238,6 +240,7 @@ impl From<CoreRoomMemberInfo> for RoomMemberInfo {
         Self {
             user_id: m.user_id,
             display_name: m.display_name,
+            avatar_url: m.avatar_url,
             power_level: m.power_level,
             role: m.role,
         }
@@ -272,6 +275,21 @@ impl From<CoreLoginMethods> for LoginMethods {
             supports_password: m.supports_password,
             supports_sso: m.supports_sso,
             sso_providers: m.sso_providers.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct UserProfile {
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+impl From<CoreUserProfile> for UserProfile {
+    fn from(p: CoreUserProfile) -> Self {
+        Self {
+            display_name: p.display_name,
+            avatar_url: p.avatar_url,
         }
     }
 }
@@ -430,6 +448,22 @@ impl ParlotteClientFFI {
 
     pub fn login_sso_callback(&self, callback_url: String) -> Result<SessionInfo, ParlotteError> {
         Ok(self.inner.login_sso_callback(&callback_url)?.into())
+    }
+
+    pub fn get_profile(&self) -> Result<UserProfile, ParlotteError> {
+        Ok(self.inner.get_profile()?.into())
+    }
+
+    pub fn set_display_name(&self, name: String) -> Result<(), ParlotteError> {
+        Ok(self.inner.set_display_name(&name)?)
+    }
+
+    pub fn set_avatar(&self, mime_type: String, data: Vec<u8>) -> Result<String, ParlotteError> {
+        Ok(self.inner.set_avatar(&mime_type, data)?)
+    }
+
+    pub fn remove_avatar(&self) -> Result<(), ParlotteError> {
+        Ok(self.inner.remove_avatar()?)
     }
 
     pub fn start_sync(&self, listener: Box<dyn ParlotteSyncListener>) -> Result<(), ParlotteError> {
@@ -744,12 +778,14 @@ mod tests {
         let core = CoreRoomMemberInfo {
             user_id: "@mod:example.com".into(),
             display_name: Some("Moderator".into()),
+            avatar_url: Some("mxc://example.com/avatar".into()),
             power_level: 50,
             role: "moderator".into(),
         };
         let ffi: RoomMemberInfo = core.into();
         assert_eq!(ffi.user_id, "@mod:example.com");
         assert_eq!(ffi.display_name.as_deref(), Some("Moderator"));
+        assert_eq!(ffi.avatar_url.as_deref(), Some("mxc://example.com/avatar"));
         assert_eq!(ffi.power_level, 50);
         assert_eq!(ffi.role, "moderator");
     }
@@ -798,6 +834,30 @@ mod tests {
         assert!(ffi.supports_password);
         assert!(!ffi.supports_sso);
         assert!(ffi.sso_providers.is_empty());
+    }
+
+    // -- UserProfile round-trip --
+
+    #[test]
+    fn user_profile_converts_all_fields() {
+        let core = CoreUserProfile {
+            display_name: Some("Alice".into()),
+            avatar_url: Some("mxc://example.com/abc123".into()),
+        };
+        let ffi: UserProfile = core.into();
+        assert_eq!(ffi.display_name.as_deref(), Some("Alice"));
+        assert_eq!(ffi.avatar_url.as_deref(), Some("mxc://example.com/abc123"));
+    }
+
+    #[test]
+    fn user_profile_converts_none_optionals() {
+        let core = CoreUserProfile {
+            display_name: None,
+            avatar_url: None,
+        };
+        let ffi: UserProfile = core.into();
+        assert!(ffi.display_name.is_none());
+        assert!(ffi.avatar_url.is_none());
     }
 
     // -- Error conversion --

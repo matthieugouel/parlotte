@@ -51,6 +51,15 @@ pub struct MessageBatch {
     pub end_token: Option<String>,
 }
 
+/// User profile information (display name and avatar).
+#[derive(Debug, Clone)]
+pub struct UserProfile {
+    /// The user's display name, if set.
+    pub display_name: Option<String>,
+    /// The mxc:// URI of the user's avatar, if set.
+    pub avatar_url: Option<String>,
+}
+
 /// An SSO identity provider offered by the homeserver.
 #[derive(Debug, Clone)]
 pub struct SsoProvider {
@@ -94,6 +103,37 @@ pub struct MatrixSessionData {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn user_profile_construction() {
+        let profile = UserProfile {
+            display_name: Some("Alice".into()),
+            avatar_url: Some("mxc://example.com/abc123".into()),
+        };
+        assert_eq!(profile.display_name.as_deref(), Some("Alice"));
+        assert_eq!(profile.avatar_url.as_deref(), Some("mxc://example.com/abc123"));
+    }
+
+    #[test]
+    fn user_profile_empty() {
+        let profile = UserProfile {
+            display_name: None,
+            avatar_url: None,
+        };
+        assert!(profile.display_name.is_none());
+        assert!(profile.avatar_url.is_none());
+    }
+
+    #[test]
+    fn user_profile_clone() {
+        let profile = UserProfile {
+            display_name: Some("Bob".into()),
+            avatar_url: None,
+        };
+        let cloned = profile.clone();
+        assert_eq!(profile.display_name, cloned.display_name);
+        assert_eq!(profile.avatar_url, cloned.avatar_url);
+    }
 
     #[test]
     fn message_info_construction() {

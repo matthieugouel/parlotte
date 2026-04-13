@@ -103,6 +103,14 @@ When adding a new core feature:
 3. Add integration tests for the happy path against Synapse
 4. Add UniFFI annotations in `parlotte-ffi`
 
+## Roadmap
+
+`ROADMAP.md` at the repo root tracks shipped and planned features. **Always
+update it before committing** — tick off boxes for work that just landed, or
+add new entries for features introduced in the commit. The roadmap is the
+canonical "what's done" source; commits that ship visible features without a
+corresponding roadmap update create drift between intent and reality.
+
 ## Coding Conventions
 
 ### Rust
