@@ -42,7 +42,7 @@
 - [x] Unread indicators / notification badges
 - [x] Read receipts (mark rooms as read)
 - [x] User profile (display name, avatar)
-- [ ] Light & dark mode
+- [x] Light & dark mode
 - [ ] Search (messages, rooms)
 
 ## Security

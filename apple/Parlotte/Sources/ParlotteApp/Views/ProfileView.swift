@@ -88,6 +88,26 @@ struct ProfileView: View {
                     .textSelection(.enabled)
             }
 
+            Divider()
+
+            // Appearance
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Appearance")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker("", selection: Binding(
+                    get: { appState.appearance },
+                    set: { appState.appearance = $0 }
+                )) {
+                    ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                        Text(mode.displayLabel).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+
             if appState.isUpdatingProfile {
                 ProgressView()
                     .controlSize(.small)
@@ -99,7 +119,7 @@ struct ProfileView: View {
                 .keyboardShortcut(.defaultAction)
         }
         .padding(24)
-        .frame(width: 360, height: 400)
+        .frame(width: 360, height: 480)
         .task {
             if let url = appState.avatarUrl {
                 avatarData = await appState.loadMedia(mxcUri: url)

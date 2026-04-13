@@ -3,6 +3,13 @@ import Foundation
 import ParlotteSDK
 import UniformTypeIdentifiers
 
+/// UI appearance preference. Mapped to SwiftUI's `ColorScheme?` at the view layer.
+public enum AppearanceMode: String, CaseIterable, Sendable {
+    case system
+    case light
+    case dark
+}
+
 @Observable
 @MainActor
 public final class AppState {
@@ -19,6 +26,14 @@ public final class AppState {
     public var displayName: String?
     public var avatarUrl: String?
     public var isUpdatingProfile = false
+
+    /// UI appearance preference. Persisted per-profile in UserDefaults.
+    public var appearance: AppearanceMode = .system {
+        didSet {
+            guard appearance != oldValue else { return }
+            Self.defaults.set(appearance.rawValue, forKey: key("appearance"))
+        }
+    }
 
     public var rooms: [RoomInfo] = []
     public var selectedRoomId: String? {
@@ -81,6 +96,12 @@ public final class AppState {
 
     public init(profile: String = "default") {
         self.profile = profile
+        // Load persisted appearance preference. didSet doesn't fire in init,
+        // so this won't round-trip back to defaults.
+        if let raw = Self.defaults.string(forKey: "parlotte.\(profile).appearance"),
+           let mode = AppearanceMode(rawValue: raw) {
+            self.appearance = mode
+        }
     }
 
     public func detectLoginMethods() async {

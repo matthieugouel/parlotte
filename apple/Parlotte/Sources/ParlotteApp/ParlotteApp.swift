@@ -36,6 +36,7 @@ struct ParlotteApp: App {
         WindowGroup {
             ContentView()
                 .environment(appState)
+                .preferredColorScheme(appState.appearance.colorScheme)
         }
         .defaultSize(width: 800, height: 600)
         .windowStyle(.hiddenTitleBar)
@@ -55,5 +56,24 @@ struct ParlotteApp: App {
             return UInt16(args[idx + 1])
         }
         return nil
+    }
+}
+
+extension AppearanceMode {
+    /// Maps to SwiftUI's `ColorScheme?`. `nil` means follow the system.
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light:  return .light
+        case .dark:   return .dark
+        }
+    }
+
+    var displayLabel: String {
+        switch self {
+        case .system: return "System"
+        case .light:  return "Light"
+        case .dark:   return "Dark"
+        }
     }
 }

@@ -26,4 +26,18 @@ enum MediaTestHelpers {
     static func removeTempFile(at url: URL) {
         try? FileManager.default.removeItem(at: url)
     }
+
+    // MARK: - UserDefaults
+
+    static func setDefault(_ value: String, forKey key: String) {
+        UserDefaults.standard.set(value, forKey: key)
+    }
+
+    static func getDefaultString(forKey key: String) -> String? {
+        UserDefaults.standard.string(forKey: key)
+    }
+
+    static func removeDefault(forKey key: String) {
+        UserDefaults.standard.removeObject(forKey: key)
+    }
 }

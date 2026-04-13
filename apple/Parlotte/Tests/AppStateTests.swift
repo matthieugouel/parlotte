@@ -1160,6 +1160,57 @@ struct AppStateTests {
         #expect(mock.downloadMediaCalls.count == 2, "old mxc should have been evicted")
     }
 
+    // MARK: - Appearance
+
+    @Test("Appearance defaults to system when no preference is stored")
+    func appearanceDefaultsToSystem() async {
+        MediaTestHelpers.removeDefault(forKey: "parlotte.appearance-default.appearance")
+        let fresh = AppState(profile: "appearance-default")
+        #expect(fresh.appearance == .system)
+    }
+
+    @Test("Setting appearance persists to UserDefaults")
+    func appearanceSettingPersists() async {
+        MediaTestHelpers.removeDefault(forKey: "parlotte.appearance-set.appearance")
+        let state = AppState(profile: "appearance-set")
+
+        state.appearance = .dark
+
+        #expect(MediaTestHelpers.getDefaultString(forKey: "parlotte.appearance-set.appearance") == "dark")
+
+        MediaTestHelpers.removeDefault(forKey: "parlotte.appearance-set.appearance")
+    }
+
+    @Test("Appearance loads from UserDefaults on init")
+    func appearanceLoadsFromDefaults() async {
+        MediaTestHelpers.setDefault("light", forKey: "parlotte.appearance-load.appearance")
+        defer { MediaTestHelpers.removeDefault(forKey: "parlotte.appearance-load.appearance") }
+
+        let state = AppState(profile: "appearance-load")
+
+        #expect(state.appearance == .light)
+    }
+
+    @Test("Appearance ignores unknown persisted values")
+    func appearanceIgnoresUnknownStoredValue() async {
+        MediaTestHelpers.setDefault("neon", forKey: "parlotte.appearance-bad.appearance")
+        defer { MediaTestHelpers.removeDefault(forKey: "parlotte.appearance-bad.appearance") }
+
+        let state = AppState(profile: "appearance-bad")
+
+        #expect(state.appearance == .system)
+    }
+
+    @Test("Setting the same appearance does not write redundantly")
+    func appearanceNoRedundantWrite() async {
+        MediaTestHelpers.removeDefault(forKey: "parlotte.appearance-noop.appearance")
+        let state = AppState(profile: "appearance-noop")
+
+        state.appearance = .system
+
+        #expect(MediaTestHelpers.getDefaultString(forKey: "parlotte.appearance-noop.appearance") == nil)
+    }
+
     @Test("Remove avatar evicts old mxc from media cache")
     mutating func removeAvatarEvictsOldCache() async {
         let oldMxc = "mxc://example.com/old"
