@@ -435,8 +435,6 @@ struct MessageBubble: View {
     @State private var isHovered = false
     @State private var showDeleteConfirm = false
     @State private var showReactionPicker = false
-    @State private var cachedAttributedString: AttributedString?
-    @State private var cachedFormattedBody: String?
 
     private var senderName: String {
         let userId = message.sender
@@ -564,8 +562,6 @@ struct MessageBubble: View {
         .onHover { hovering in
             isHovered = hovering
         }
-        .onAppear { refreshAttributedCacheIfNeeded() }
-        .onChange(of: message.formattedBody) { _, _ in refreshAttributedCacheIfNeeded() }
         .alert("Delete Message", isPresented: $showDeleteConfirm) {
             Button("Delete", role: .destructive) { onDelete() }
             Button("Cancel", role: .cancel) {}
@@ -625,27 +621,9 @@ struct MessageBubble: View {
         )
     }
 
-    private func refreshAttributedCacheIfNeeded() {
-        if cachedFormattedBody == message.formattedBody { return }
-        cachedFormattedBody = message.formattedBody
-        cachedAttributedString = Self.buildAttributedString(from: message.formattedBody)
-    }
-
-    private static func buildAttributedString(from html: String?) -> AttributedString? {
-        guard let html else { return nil }
-        let wrapped = "<html><body style=\"font-family: -apple-system; font-size: 14px;\">\(html)</body></html>"
-        guard let data = wrapped.data(using: .utf8),
-              let nsAttr = try? NSAttributedString(
-                  data: data,
-                  options: [.documentType: NSAttributedString.DocumentType.html,
-                            .characterEncoding: String.Encoding.utf8.rawValue],
-                  documentAttributes: nil
-              ) else { return nil }
-        return try? AttributedString(nsAttr, including: \.swiftUI)
-    }
-
     @ViewBuilder
     private var messageContent: some View {
+        let attributed = MessageRenderCache.attributedString(for: message.formattedBody)
         switch message.messageType {
         case "image":
             MediaImageView(message: message)
@@ -661,14 +639,14 @@ struct MessageBubble: View {
             Label(message.body, systemImage: "location")
                 .foregroundStyle(.secondary)
         case "emote":
-            if let attributed = cachedAttributedString {
+            if let attributed {
                 Text("* \(senderName) ") + Text(attributed)
             } else {
                 Text("* \(senderName) \(message.body)")
                     .italic()
             }
         default:
-            if let attributed = cachedAttributedString {
+            if let attributed {
                 Text(attributed)
             } else {
                 Text(message.body)
