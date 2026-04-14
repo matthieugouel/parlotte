@@ -14,17 +14,17 @@ struct MemberListView: View {
         VStack(spacing: 0) {
             HStack {
                 Text("Members")
-                    .font(.title2)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 16, weight: .semibold))
 
                 Spacer()
 
                 Button("Done") { dismiss() }
                     .buttonStyle(.plain)
             }
-            .padding()
+            .padding(Spacing.lg)
 
             Divider()
+                .opacity(0.5)
 
             if isLoading {
                 Spacer()
@@ -33,37 +33,34 @@ struct MemberListView: View {
             } else if members.isEmpty {
                 Spacer()
                 Text("No members found")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textTertiary)
                 Spacer()
             } else {
                 List(members, id: \.userId) { member in
-                    HStack(spacing: 12) {
-                        Image(systemName: iconName(for: member.role))
-                            .font(.body)
-                            .foregroundStyle(iconColor(for: member.role))
-                            .frame(width: 24)
+                    HStack(spacing: Spacing.md) {
+                        MemberAvatar(userId: member.userId, size: 32)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(member.displayName ?? member.userId)
-                                .font(.body)
+                        VStack(alignment: .leading, spacing: Spacing.xxs) {
+                            Text(member.displayName ?? localpart(from: member.userId))
+                                .font(.senderName)
 
                             if member.displayName != nil {
                                 Text(member.userId)
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(AppColor.textTertiary)
                             }
                         }
 
                         Spacer()
 
                         Text(member.role.capitalized)
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
+                            .font(.system(size: 10, weight: .medium))
+                            .padding(.horizontal, Spacing.sm)
+                            .padding(.vertical, Spacing.xxs)
                             .background(roleBadgeColor(for: member.role))
                             .clipShape(Capsule())
                     }
-                    .padding(.vertical, 2)
+                    .padding(.vertical, Spacing.xxs)
                 }
                 .listStyle(.plain)
             }
@@ -75,27 +72,18 @@ struct MemberListView: View {
         }
     }
 
-    private func iconName(for role: String) -> String {
-        switch role {
-        case "admin": return "crown.fill"
-        case "moderator": return "shield.fill"
-        default: return "person.fill"
+    private func localpart(from userId: String) -> String {
+        if userId.hasPrefix("@"), let colon = userId.firstIndex(of: ":") {
+            return String(userId[userId.index(after: userId.startIndex)..<colon])
         }
-    }
-
-    private func iconColor(for role: String) -> Color {
-        switch role {
-        case "admin": return .orange
-        case "moderator": return .blue
-        default: return .secondary
-        }
+        return userId
     }
 
     private func roleBadgeColor(for role: String) -> Color {
         switch role {
-        case "admin": return .orange.opacity(0.2)
-        case "moderator": return .blue.opacity(0.2)
-        default: return .secondary.opacity(0.15)
+        case "admin": return .orange.opacity(0.15)
+        case "moderator": return AppColor.accent.opacity(0.15)
+        default: return AppColor.surfaceHover
         }
     }
 }

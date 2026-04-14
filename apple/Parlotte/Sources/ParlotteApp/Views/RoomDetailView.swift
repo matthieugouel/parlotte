@@ -18,72 +18,69 @@ struct RoomDetailView: View {
         let room = appState.rooms.first { $0.id == appState.selectedRoomId }
         return Group {
             if let room {
-                VStack(spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text(room.displayName)
-                            .font(.title2)
-                            .fontWeight(.semibold)
+                HStack(spacing: Spacing.md) {
+                    // Room identity: avatar + name/topic
+                    RoomAvatar(roomName: room.displayName, roomId: room.id, isPublic: room.isPublic, size: AvatarSize.roomHeader)
 
-                        Image(systemName: room.isPublic ? "globe" : "lock.fill")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .help(room.isPublic ? "Public room" : "Private room")
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        HStack(spacing: Spacing.sm) {
+                            Text(room.displayName)
+                                .font(.roomTitle)
+                                .lineLimit(1)
 
-                        if room.isEncrypted {
-                            Image(systemName: "shield.lefthalf.filled")
-                                .font(.callout)
-                                .foregroundStyle(.green)
-                                .help("End-to-end encrypted")
+                            if room.isEncrypted {
+                                Image(systemName: "lock.shield.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(AppColor.online)
+                                    .help("End-to-end encrypted")
+                            }
                         }
 
-                        Spacer()
-
-                        Button {
-                            showSettings = true
-                        } label: {
-                            Image(systemName: "gearshape")
-                                .font(.title3)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Room Settings")
-
-                        Button {
-                            showMembers = true
-                        } label: {
-                            Image(systemName: "person.2")
-                                .font(.title3)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Members")
-
-                        Button {
-                            showInvite = true
-                        } label: {
-                            Image(systemName: "person.badge.plus")
-                                .font(.title3)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Invite User")
-
-                        Button {
-                            showLeaveConfirm = true
-                        } label: {
-                            Image(systemName: "arrow.right.square")
-                                .font(.title3)
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Leave Room")
-                    }
-
-                    if let topic = room.topic, !topic.isEmpty {
-                        HStack {
+                        if let topic = room.topic, !topic.isEmpty {
                             Text(topic)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            Spacer()
+                                .font(.roomTopic)
+                                .foregroundStyle(AppColor.textTertiary)
+                                .lineLimit(1)
                         }
                     }
+
+                    Spacer()
+
+                    // Members pill
+                    Button { showMembers = true } label: {
+                        HStack(spacing: Spacing.xs) {
+                            Image(systemName: "person.2")
+                                .font(.caption)
+                            Text("Members")
+                                .font(.caption)
+                        }
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xs)
+                        .background(AppColor.surfaceHover, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Members")
+
+                    // Overflow menu
+                    Menu {
+                        Button { showSettings = true } label: {
+                            Label("Room Settings", systemImage: "gearshape")
+                        }
+                        Button { showInvite = true } label: {
+                            Label("Invite User", systemImage: "person.badge.plus")
+                        }
+                        Divider()
+                        Button(role: .destructive) { showLeaveConfirm = true } label: {
+                            Label("Leave Room", systemImage: "arrow.right.square")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.body)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -97,22 +94,19 @@ struct RoomDetailView: View {
         if let room = currentRoom, room.isInvited {
             VStack(spacing: 16) {
                 Spacer()
-                Image(systemName: "envelope.badge")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.secondary)
+                RoomAvatar(roomName: room.displayName, roomId: room.id, isPublic: room.isPublic, size: 56)
                 Text("You've been invited to")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14))
+                    .foregroundStyle(AppColor.textTertiary)
+                    .padding(.top, Spacing.sm)
                 Text(room.displayName)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                HStack(spacing: 12) {
-                    Button("Accept") {
-                        Task { await appState.joinRoom(roomId: room.id) }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
+                    .font(.system(size: 20, weight: .semibold))
+                Button("Accept Invite") {
+                    Task { await appState.joinRoom(roomId: room.id) }
                 }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .padding(.top, Spacing.sm)
                 Spacer()
             }
             .frame(maxWidth: .infinity)
@@ -125,11 +119,11 @@ struct RoomDetailView: View {
         VStack(spacing: 0) {
             // Room header
             selectedRoom
-                .padding(.horizontal)
-                .padding(.top, 10)
-                .padding(.bottom, 10)
+                .padding(.horizontal, Spacing.lg)
+                .padding(.vertical, Spacing.md)
 
             Divider()
+                .opacity(0.5)
 
             // Message list
             messageList
@@ -137,28 +131,26 @@ struct RoomDetailView: View {
             // Typing indicator
             if !appState.currentRoomTypingUsers.isEmpty {
                 TypingIndicator(userIds: appState.currentRoomTypingUsers)
-                    .padding(.horizontal)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.vertical, Spacing.xs)
             }
-
-            Divider()
 
             // Compose area
             VStack(spacing: 0) {
                 if let reply = replyingTo {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Spacing.sm) {
                         RoundedRectangle(cornerRadius: 2)
-                            .fill(.blue)
+                            .fill(AppColor.accent)
                             .frame(width: 3, height: 28)
 
                         VStack(alignment: .leading, spacing: 0) {
                             Text(reply.sender)
                                 .font(.caption)
                                 .fontWeight(.semibold)
-                                .foregroundStyle(.blue)
+                                .foregroundStyle(AppColor.accent)
                             Text(reply.body)
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(AppColor.textSecondary)
                                 .lineLimit(1)
                         }
 
@@ -168,35 +160,29 @@ struct RoomDetailView: View {
                             replyingTo = nil
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(AppColor.textSecondary)
                         }
                         .buttonStyle(.plain)
                     }
-                    .padding(.horizontal)
-                    .padding(.vertical, 6)
-                    .background(.bar)
-
-                    Divider()
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.vertical, Spacing.sm)
                 }
 
-                HStack(spacing: 10) {
-                    Button {
-                        attachFile()
-                    } label: {
+                HStack(alignment: .bottom, spacing: Spacing.sm) {
+                    Button { attachFile() } label: {
                         Image(systemName: "paperclip")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
+                            .font(.body)
+                            .foregroundStyle(AppColor.textSecondary)
                     }
                     .buttonStyle(.plain)
                     .help("Attach file")
 
-                    TextField("Send a message...", text: $messageText, axis: .vertical)
+                    let roomName = appState.rooms.first { $0.id == appState.selectedRoomId }?.displayName ?? "..."
+                    TextField("Message \(roomName)", text: $messageText, axis: .vertical)
                         .textFieldStyle(.plain)
-                        .font(.body)
-                        .lineLimit(1...5)
-                        .onSubmit {
-                            send()
-                        }
+                        .font(.messageBody)
+                        .lineLimit(1...8)
+                        .onSubmit { send() }
                         .onChange(of: messageText) { oldValue, newValue in
                             let wasEmpty = oldValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                             let isEmpty = newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -207,18 +193,28 @@ struct RoomDetailView: View {
                             }
                         }
 
-                    Button {
-                        send()
-                    } label: {
-                        Image(systemName: "paperplane.fill")
-                            .font(.body)
+                    let canSend = !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    Button { send() } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundStyle(canSend ? AppColor.accent : AppColor.textTertiary)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 12)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.lg)
+                        .fill(AppColor.surfaceRaised)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.lg)
+                        .strokeBorder(AppColor.border, lineWidth: 1)
+                )
+                .padding(.horizontal, Spacing.md)
+                .padding(.bottom, Spacing.md)
+                .padding(.top, Spacing.sm)
             }
         }
         .alert("Invite User", isPresented: $showInvite) {
@@ -275,19 +271,29 @@ struct RoomDetailView: View {
                     HStack {
                         Spacer()
                         if appState.isLoadingMoreMessages {
-                            ProgressView("Loading older messages...")
+                            ProgressView()
                                 .controlSize(.small)
+                                .padding(.trailing, Spacing.sm)
+                            Text("Loading...")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(AppColor.textTertiary)
                         } else {
-                            Button("Load older messages") {
+                            Button {
                                 Task { await appState.loadMoreMessages() }
+                            } label: {
+                                HStack(spacing: Spacing.xs) {
+                                    Image(systemName: "arrow.up")
+                                        .font(.system(size: 10, weight: .semibold))
+                                    Text("Load older messages")
+                                        .font(.system(size: 12, weight: .medium))
+                                }
+                                .foregroundStyle(AppColor.accent)
                             }
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
                             .buttonStyle(.plain)
                         }
                         Spacer()
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Spacing.md)
                 }
 
                 ForEach(Array(appState.messages.enumerated()), id: \.element.eventId) { index, message in
@@ -301,9 +307,25 @@ struct RoomDetailView: View {
                         }
                     }
 
+                    let isGrouped: Bool = {
+                        guard index > 0 else { return false }
+                        let prev = appState.messages[index - 1]
+                        guard prev.sender == message.sender else { return false }
+                        // Group if within 5 minutes
+                        let gap = message.timestampMs > prev.timestampMs
+                            ? message.timestampMs - prev.timestampMs
+                            : 0
+                        if gap > 5 * 60 * 1000 { return false }
+                        // Don't group across day boundaries
+                        let prevDay = Self.calendarDay(prev.timestampMs)
+                        let thisDay = Self.calendarDay(message.timestampMs)
+                        return prevDay == thisDay
+                    }()
+
                     MessageBubble(
                         message: message,
                         isOwnMessage: message.sender == appState.loggedInUserId,
+                        isGrouped: isGrouped,
                         repliedMessage: message.repliedToEventId.flatMap { replyId in
                             appState.messages.first { $0.eventId == replyId }
                         },
@@ -321,9 +343,26 @@ struct RoomDetailView: View {
                         }
                     )
                 }
+
+                // Empty conversation state
+                if appState.messages.isEmpty && !appState.hasMoreMessages {
+                    VStack(spacing: Spacing.md) {
+                        Spacer()
+                            .frame(height: 80)
+                        if let room = appState.rooms.first(where: { $0.id == appState.selectedRoomId }) {
+                            RoomAvatar(roomName: room.displayName, roomId: room.id, isPublic: room.isPublic, size: 56)
+                            Text(room.displayName)
+                                .font(.system(size: 18, weight: .semibold))
+                            Text("This is the beginning of your conversation.")
+                                .font(.system(size: 13))
+                                .foregroundStyle(AppColor.textTertiary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
             }
-            .padding(.horizontal)
-            .padding(.vertical, 10)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.md)
         }
     }
 
@@ -370,10 +409,11 @@ private struct TypingIndicator: View {
     }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: Spacing.xs) {
             Text(displayText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 12))
+                .foregroundStyle(AppColor.textTertiary)
+                .italic()
             Spacer()
         }
     }
@@ -383,6 +423,7 @@ struct MessageBubble: View {
     @Environment(AppState.self) private var appState
     let message: MessageInfo
     let isOwnMessage: Bool
+    let isGrouped: Bool
     let repliedMessage: MessageInfo?
     let onReply: () -> Void
     let onEdit: (String) -> Void
@@ -404,152 +445,163 @@ struct MessageBubble: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            // Avatar
-            MemberAvatar(userId: message.sender, size: 32)
-
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Text(appState.memberDisplayName(for: message.sender) ?? senderName)
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-
-                    Text(formattedTime)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-
-                    if message.isEdited {
-                        Text("(edited)")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-
-                    Spacer()
-
-                    if (isHovered || showReactionPicker) && !isEditing {
-                        HStack(spacing: 6) {
-                            Button {
-                                onReply()
-                            } label: {
-                                Image(systemName: "arrowshape.turn.up.left")
-                                    .font(.body)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Reply")
-
-                            Button {
-                                showReactionPicker = true
-                            } label: {
-                                Image(systemName: "face.smiling")
-                                    .font(.body)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .help("React")
-                            .popover(isPresented: $showReactionPicker) {
-                                ReactionPicker { key in
-                                    showReactionPicker = false
-                                    onReact(key)
-                                }
-                            }
-
-                            if isOwnMessage {
-                                Button {
-                                    editText = message.body
-                                    isEditing = true
-                                } label: {
-                                    Image(systemName: "pencil")
-                                        .font(.body)
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .help("Edit")
-
-                                Button {
-                                    showDeleteConfirm = true
-                                } label: {
-                                    Image(systemName: "trash")
-                                        .font(.body)
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .help("Delete")
-                            }
-                        }
-                        .transition(.opacity)
-                    }
+        HStack(alignment: .top, spacing: Layout.avatarGutter) {
+            if isGrouped {
+                // Show timestamp on hover in the avatar column
+                if isHovered && !isEditing {
+                    Text(formattedTimeShort)
+                        .font(.messageTimestamp)
+                        .foregroundStyle(AppColor.textTertiary)
+                        .frame(width: AvatarSize.message, alignment: .center)
+                } else {
+                    Color.clear
+                        .frame(width: AvatarSize.message, height: 1)
                 }
-
-            if let replied = repliedMessage {
-                HStack(spacing: 6) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(.blue.opacity(0.6))
-                        .frame(width: 3, height: 28)
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(replied.sender)
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.blue)
-                        Text(replied.body)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                .padding(.vertical, 2)
+            } else {
+                MemberAvatar(userId: message.sender, size: AvatarSize.message)
             }
 
-            if isEditing {
-                HStack(spacing: 8) {
-                    TextField("Edit message...", text: $editText, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .font(.title3)
-                        .lineLimit(1...5)
-                        .onSubmit {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                if !isGrouped {
+                    HStack(spacing: Spacing.sm) {
+                        Text(appState.memberDisplayName(for: message.sender) ?? senderName)
+                            .font(.senderName)
+                            .foregroundStyle(AppColor.textPrimary)
+
+                        Text(formattedTime)
+                            .font(.messageTimestamp)
+                            .foregroundStyle(AppColor.textTertiary)
+
+                        if message.isEdited {
+                            Text("(edited)")
+                                .font(.messageTimestamp)
+                                .foregroundStyle(AppColor.textTertiary)
+                        }
+                    }
+                }
+
+                if let replied = repliedMessage {
+                    HStack(spacing: Spacing.sm) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(AppColor.accent.opacity(0.6))
+                            .frame(width: 3, height: 28)
+
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(replied.sender)
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(AppColor.accent)
+                            Text(replied.body)
+                                .font(.caption2)
+                                .foregroundStyle(AppColor.textSecondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding(.vertical, Spacing.xxs)
+                }
+
+                if isEditing {
+                    HStack(spacing: Spacing.sm) {
+                        TextField("Edit message...", text: $editText, axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .font(.messageBody)
+                            .lineLimit(1...5)
+                            .onSubmit {
+                                let text = editText
+                                isEditing = false
+                                onEdit(text)
+                            }
+
+                        Button("Save") {
                             let text = editText
                             isEditing = false
                             onEdit(text)
                         }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
 
-                    Button("Save") {
-                        let text = editText
-                        isEditing = false
-                        onEdit(text)
+                        Button("Cancel") {
+                            isEditing = false
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-
-                    Button("Cancel") {
-                        isEditing = false
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                } else {
+                    messageContent
+                        .font(.messageBody)
+                        .textSelection(.enabled)
                 }
-            } else {
-                messageContent
-                    .font(.title3)
-                    .textSelection(.enabled)
+
+                if !message.reactions.isEmpty {
+                    ReactionBar(
+                        reactions: message.reactions,
+                        currentUserId: appState.loggedInUserId ?? "",
+                        onToggle: onReact
+                    )
+                }
             }
 
-            if !message.reactions.isEmpty {
-                ReactionBar(
-                    reactions: message.reactions,
-                    currentUserId: appState.loggedInUserId ?? "",
-                    onToggle: onReact
+            Spacer(minLength: 0)
+
+            // Floating action toolbar on hover
+            if (isHovered || showReactionPicker) && !isEditing {
+                HStack(spacing: Spacing.xs) {
+                    Button { onReply() } label: {
+                        Image(systemName: "arrowshape.turn.up.left")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Reply")
+
+                    Button { showReactionPicker = true } label: {
+                        Image(systemName: "face.smiling")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .help("React")
+                    .popover(isPresented: $showReactionPicker) {
+                        ReactionPicker { key in
+                            showReactionPicker = false
+                            onReact(key)
+                        }
+                    }
+
+                    if isOwnMessage {
+                        Button {
+                            editText = message.body
+                            isEditing = true
+                        } label: {
+                            Image(systemName: "pencil")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Edit")
+
+                        Button { showDeleteConfirm = true } label: {
+                            Image(systemName: "trash")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete")
+                    }
+                }
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.sm)
+                        .fill(AppColor.surfaceRaised)
+                        .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
                 )
+                .transition(.opacity)
             }
-            } // end inner VStack
-        } // end HStack
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 5)
-        .padding(.horizontal, 4)
+        .padding(.vertical, isGrouped ? Spacing.xxs : Spacing.xs)
+        .padding(.horizontal, Spacing.xs)
         .contentShape(Rectangle())
         .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isHovered ? Color.primary.opacity(0.04) : .clear)
+            RoundedRectangle(cornerRadius: Radius.sm)
+                .fill(isHovered ? AppColor.surfaceHover : .clear)
         )
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
@@ -557,9 +609,7 @@ struct MessageBubble: View {
             }
         }
         .alert("Delete Message", isPresented: $showDeleteConfirm) {
-            Button("Delete", role: .destructive) {
-                onDelete()
-            }
+            Button("Delete", role: .destructive) { onDelete() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Are you sure you want to delete this message?")
@@ -600,8 +650,7 @@ struct MessageBubble: View {
 
     private var formattedAttributedString: AttributedString? {
         guard let html = message.formattedBody else { return nil }
-        // Wrap in a basic HTML document so NSAttributedString parses it correctly
-        let wrapped = "<html><body style=\"font-family: -apple-system; font-size: 16px;\">\(html)</body></html>"
+        let wrapped = "<html><body style=\"font-family: -apple-system; font-size: 14px;\">\(html)</body></html>"
         guard let data = wrapped.data(using: .utf8),
               let nsAttr = try? NSAttributedString(
                   data: data,
@@ -619,6 +668,13 @@ struct MessageBubble: View {
         formatter.timeStyle = .short
         return formatter.string(from: date)
     }
+
+    private var formattedTimeShort: String {
+        let date = Date(timeIntervalSince1970: Double(message.timestampMs) / 1000.0)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
 }
 
 // MARK: - Date Separator
@@ -627,15 +683,21 @@ private struct DateSeparator: View {
     let timestamp: UInt64
 
     var body: some View {
-        HStack {
-            VStack { Divider() }
+        HStack(spacing: Spacing.md) {
+            line
             Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(AppColor.textTertiary)
                 .layoutPriority(1)
-            VStack { Divider() }
+            line
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, Spacing.md)
+    }
+
+    private var line: some View {
+        Rectangle()
+            .fill(AppColor.borderSubtle)
+            .frame(height: 1)
     }
 
     private var label: String {
@@ -675,31 +737,31 @@ private struct ReactionBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: Spacing.xs) {
             ForEach(grouped, id: \.key) { group in
                 Button {
                     onToggle(group.key)
                 } label: {
-                    HStack(spacing: 2) {
+                    HStack(spacing: Spacing.xxs) {
                         Text(group.key)
-                            .font(.caption)
+                            .font(.system(size: 13))
                         if group.count > 1 {
                             Text("\(group.count)")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 11))
+                                .foregroundStyle(AppColor.textSecondary)
                         }
                     }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.xxs)
                     .background(
                         Capsule()
                             .fill(group.userReacted
-                                  ? Color.accentColor.opacity(0.2)
-                                  : Color.secondary.opacity(0.1))
+                                  ? AppColor.accent.opacity(0.15)
+                                  : AppColor.surfaceHover)
                     )
                     .overlay(
                         Capsule()
-                            .strokeBorder(group.userReacted ? Color.accentColor : .clear, lineWidth: 1)
+                            .strokeBorder(group.userReacted ? AppColor.accent.opacity(0.4) : AppColor.borderSubtle, lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)
@@ -742,9 +804,33 @@ extension RoomDetailView {
     }
 }
 
+// MARK: - Deterministic avatar color
+
+private func deterministicColor(for identifier: String) -> Color {
+    let hash = abs(identifier.hashValue)
+    let colors: [Color] = [
+        Color(red: 0.40, green: 0.35, blue: 0.85),  // indigo
+        Color(red: 0.65, green: 0.30, blue: 0.70),  // purple
+        Color(red: 0.80, green: 0.35, blue: 0.50),  // pink
+        Color(red: 0.85, green: 0.50, blue: 0.25),  // orange
+        Color(red: 0.25, green: 0.65, blue: 0.60),  // teal
+        Color(red: 0.30, green: 0.45, blue: 0.80),  // blue
+        Color(red: 0.35, green: 0.70, blue: 0.45),  // green
+        Color(red: 0.55, green: 0.40, blue: 0.75),  // violet
+    ]
+    return colors[hash % colors.count]
+}
+
+private func localpart(from userId: String) -> String {
+    if userId.hasPrefix("@"), let colon = userId.firstIndex(of: ":") {
+        return String(userId[userId.index(after: userId.startIndex)..<colon])
+    }
+    return userId
+}
+
 // MARK: - Member Avatar
 
-private struct MemberAvatar: View {
+struct MemberAvatar: View {
     @Environment(AppState.self) private var appState
     let userId: String
     let size: CGFloat
@@ -765,9 +851,9 @@ private struct MemberAvatar: View {
             } else {
                 ZStack {
                     Circle()
-                        .fill(avatarColor)
+                        .fill(deterministicColor(for: userId))
                     Text(initial)
-                        .font(.system(size: size * 0.45, weight: .semibold))
+                        .font(.system(size: size * 0.42, weight: .semibold))
                         .foregroundStyle(.white)
                 }
             }
@@ -784,19 +870,29 @@ private struct MemberAvatar: View {
             }
         }
     }
+}
 
-    private var avatarColor: Color {
-        // Deterministic color from userId hash
-        let hash = abs(userId.hashValue)
-        let colors: [Color] = [.blue, .purple, .pink, .orange, .teal, .indigo, .mint, .cyan]
-        return colors[hash % colors.count]
+// MARK: - Room Avatar
+
+struct RoomAvatar: View {
+    let roomName: String
+    let roomId: String
+    let isPublic: Bool
+    let size: CGFloat
+
+    private var initial: String {
+        String(roomName.prefix(1)).uppercased()
     }
 
-    private func localpart(from userId: String) -> String {
-        if userId.hasPrefix("@"), let colon = userId.firstIndex(of: ":") {
-            return String(userId[userId.index(after: userId.startIndex)..<colon])
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.25)
+                .fill(deterministicColor(for: roomId))
+            Text(initial)
+                .font(.system(size: size * 0.42, weight: .semibold))
+                .foregroundStyle(.white)
         }
-        return userId
+        .frame(width: size, height: size)
     }
 }
 

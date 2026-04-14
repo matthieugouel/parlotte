@@ -26,24 +26,28 @@ struct RoomSettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
             Text("Room Settings")
-                .font(.headline)
+                .font(.system(size: 16, weight: .semibold))
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text("Name")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AppColor.textTertiary)
+                    .textCase(.uppercase)
                 TextField("Room name", text: $name)
                     .textFieldStyle(.roundedBorder)
+                    .font(.messageBody)
             }
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text("Topic")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AppColor.textTertiary)
+                    .textCase(.uppercase)
                 TextField("Room topic", text: $topic, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
+                    .font(.messageBody)
                     .lineLimit(2...5)
             }
 
@@ -60,7 +64,7 @@ struct RoomSettingsView: View {
                 .disabled(!hasChanges || appState.isUpdatingRoomSettings)
             }
         }
-        .padding(20)
+        .padding(Spacing.xl)
         .frame(width: 380)
         .onAppear {
             guard !didInit, let room else { return }

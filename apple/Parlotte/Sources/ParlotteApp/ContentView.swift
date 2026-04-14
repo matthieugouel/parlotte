@@ -62,29 +62,29 @@ struct MainView: View {
         HStack(spacing: 0) {
             RoomListView()
                 .padding(.top, 28)
-                .frame(width: 250)
-                .background(.black.opacity(0.15))
+                .frame(width: Layout.sidebarWidth)
+                .background(AppColor.sidebarBackground)
 
             Divider()
                 .opacity(0.3)
 
-            if appState.selectedRoomId != nil {
+            if let roomId = appState.selectedRoomId {
                 RoomDetailView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .id(roomId)
             } else {
-                VStack {
+                // Empty state
+                VStack(spacing: Spacing.md) {
                     Spacer()
                     Image(systemName: "bubble.left.and.bubble.right")
-                        .font(.system(size: 40))
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 48, weight: .light))
+                        .foregroundStyle(AppColor.textTertiary)
                     Text("No Room Selected")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 8)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(AppColor.textSecondary)
                     Text("Select a room from the sidebar to start chatting.")
-                        .font(.callout)
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppColor.textTertiary)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

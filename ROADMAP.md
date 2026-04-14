@@ -20,7 +20,6 @@
 - [x] Leave room
 - [x] Room member list
 - [x] Room settings (name, topic)
-- [ ] Room avatars
 - [ ] Admin actions (kick, ban, change power levels)
 - [ ] Delete / tombstone rooms
 
@@ -43,8 +42,16 @@
 - [x] Read receipts (mark rooms as read)
 - [x] User profile (display name, avatar)
 - [x] Light & dark mode
+- [x] Design system (spacing tokens, semantic colors, typography scale)
+- [x] Message grouping (consecutive same-sender messages collapse)
+- [x] Room avatars in sidebar and headers
+- [x] Redesigned room list (two-line rows with avatar, name, subtitle)
+- [x] Redesigned room header (avatar, consolidated overflow menu)
+- [x] Redesigned message composer (rounded surface with border)
+- [x] Sidebar header with user avatar and sync status
+- [x] Empty conversation state
 - [ ] Search (messages, rooms)
-- [ ] Polish UI/UX
+- [ ] Message hover action toolbar
 
 ## Security
 - [x] Legacy SSO login (browser-based, works with most Synapse servers)

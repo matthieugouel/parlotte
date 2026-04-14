@@ -13,18 +13,17 @@ struct ProfileView: View {
     @State private var avatarData: Data?
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: Spacing.xl) {
             Text("Profile")
-                .font(.title2)
-                .fontWeight(.semibold)
+                .font(.system(size: 18, weight: .semibold))
 
             // Avatar
-            VStack(spacing: 8) {
+            VStack(spacing: Spacing.sm) {
                 avatarView
-                    .frame(width: 80, height: 80)
+                    .frame(width: AvatarSize.profile, height: AvatarSize.profile)
                     .clipShape(Circle())
 
-                HStack(spacing: 12) {
+                HStack(spacing: Spacing.md) {
                     Button("Change") {
                         pickAvatar()
                     }
@@ -35,21 +34,24 @@ struct ProfileView: View {
                         }
                     }
                 }
-                .font(.caption)
+                .font(.system(size: 12, weight: .medium))
             }
 
             Divider()
+                .opacity(0.5)
 
             // Display name
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text("Display Name")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AppColor.textTertiary)
+                    .textCase(.uppercase)
 
                 if isEditingName {
                     HStack {
                         TextField("Display name", text: $editingName)
                             .textFieldStyle(.roundedBorder)
+                            .font(.messageBody)
                             .onSubmit { saveDisplayName() }
 
                         Button("Save") { saveDisplayName() }
@@ -60,7 +62,7 @@ struct ProfileView: View {
                 } else {
                     HStack {
                         Text(appState.displayName ?? localpart(from: appState.loggedInUserId ?? ""))
-                            .font(.body)
+                            .font(.messageBody)
 
                         Spacer()
 
@@ -70,6 +72,7 @@ struct ProfileView: View {
                         } label: {
                             Image(systemName: "pencil")
                                 .font(.caption)
+                                .foregroundStyle(AppColor.textSecondary)
                         }
                         .buttonStyle(.plain)
                     }
@@ -77,24 +80,27 @@ struct ProfileView: View {
             }
 
             // User ID (read-only)
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text("User ID")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AppColor.textTertiary)
+                    .textCase(.uppercase)
 
                 Text(appState.loggedInUserId ?? "")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
+                    .font(.messageBody)
+                    .foregroundStyle(AppColor.textSecondary)
                     .textSelection(.enabled)
             }
 
             Divider()
+                .opacity(0.5)
 
             // Appearance
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text("Appearance")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AppColor.textTertiary)
+                    .textCase(.uppercase)
 
                 Picker("", selection: Binding(
                     get: { appState.appearance },
@@ -118,8 +124,8 @@ struct ProfileView: View {
             Button("Done") { dismiss() }
                 .keyboardShortcut(.defaultAction)
         }
-        .padding(24)
-        .frame(width: 360, height: 480)
+        .padding(Spacing.xxl)
+        .frame(width: 360, height: 520)
         .task {
             if let url = appState.avatarUrl {
                 avatarData = await appState.loadMedia(mxcUri: url)
@@ -134,16 +140,14 @@ struct ProfileView: View {
                 .resizable()
                 .scaledToFill()
         } else {
-            // Initials fallback
             let name = appState.displayName ?? localpart(from: appState.loggedInUserId ?? "?")
             let initial = String(name.prefix(1)).uppercased()
             ZStack {
                 Circle()
-                    .fill(.blue.opacity(0.3))
+                    .fill(AppColor.accent.opacity(0.2))
                 Text(initial)
-                    .font(.title)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.blue)
+                    .font(.system(size: AvatarSize.profile * 0.4, weight: .semibold))
+                    .foregroundStyle(AppColor.accent)
             }
         }
     }

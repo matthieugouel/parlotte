@@ -13,14 +13,15 @@ struct ExploreRoomsView: View {
         VStack(spacing: 0) {
             HStack {
                 Text("Explore Public Rooms")
-                    .font(.headline)
+                    .font(.system(size: 16, weight: .semibold))
                 Spacer()
                 Button("Done") { dismiss() }
                     .buttonStyle(.plain)
             }
-            .padding()
+            .padding(Spacing.lg)
 
             Divider()
+                .opacity(0.5)
 
             if isLoading {
                 Spacer()
@@ -29,31 +30,38 @@ struct ExploreRoomsView: View {
             } else if publicRooms.isEmpty {
                 Spacer()
                 Text("No public rooms found")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textTertiary)
                 Spacer()
             } else {
                 List(publicRooms, id: \.id) { room in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: Spacing.md) {
+                        RoomAvatar(
+                            roomName: room.name ?? "?",
+                            roomId: room.id,
+                            isPublic: true,
+                            size: 32
+                        )
+
+                        VStack(alignment: .leading, spacing: Spacing.xxs) {
                             Text(room.name ?? room.id)
-                                .fontWeight(.medium)
+                                .font(.roomName)
 
                             if let topic = room.topic, !topic.isEmpty {
                                 Text(topic)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(.roomPreview)
+                                    .foregroundStyle(AppColor.textTertiary)
                                     .lineLimit(2)
                             }
 
-                            HStack(spacing: 8) {
+                            HStack(spacing: Spacing.sm) {
                                 Label("\(room.memberCount)", systemImage: "person.2")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(AppColor.textTertiary)
 
                                 if let alias = room.alias {
                                     Text(alias)
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(AppColor.textTertiary)
                                 }
                             }
                         }
@@ -62,8 +70,8 @@ struct ExploreRoomsView: View {
 
                         if joinedRoomIds.contains(room.id) {
                             Text("Joined")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(AppColor.textTertiary)
                         } else {
                             Button("Join") {
                                 Task {
@@ -75,11 +83,12 @@ struct ExploreRoomsView: View {
                             .controlSize(.small)
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xs)
                 }
+                .listStyle(.plain)
             }
         }
-        .frame(minWidth: 400, minHeight: 300)
+        .frame(minWidth: 420, minHeight: 300)
         .task {
             joinedRoomIds = Set(appState.rooms.map(\.id))
             publicRooms = await appState.fetchPublicRooms()

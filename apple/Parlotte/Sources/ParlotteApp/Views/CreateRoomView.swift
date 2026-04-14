@@ -9,24 +9,19 @@ struct CreateRoomView: View {
     @State private var isCreating = false
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Spacing.lg) {
             Text("Create Room")
-                .font(.headline)
+                .font(.system(size: 16, weight: .semibold))
 
             TextField("Room name", text: $roomName)
                 .textFieldStyle(.roundedBorder)
+                .font(.messageBody)
 
             Toggle("Public room", isOn: $isPublic)
 
-            if isPublic {
-                Text("Anyone can find and join this room.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("Only invited users can join.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text(isPublic ? "Anyone can find and join this room." : "Only invited users can join.")
+                .font(.system(size: 12))
+                .foregroundStyle(AppColor.textTertiary)
 
             HStack {
                 Button("Cancel") { dismiss() }
@@ -47,7 +42,7 @@ struct CreateRoomView: View {
                 .disabled(roomName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isCreating)
             }
         }
-        .padding(20)
+        .padding(Spacing.xl)
         .frame(width: 320)
     }
 }

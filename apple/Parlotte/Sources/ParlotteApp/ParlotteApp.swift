@@ -37,6 +37,7 @@ struct ParlotteApp: App {
             ContentView()
                 .environment(appState)
                 .preferredColorScheme(appState.appearance.colorScheme)
+                .tint(AppColor.accent)
         }
         .defaultSize(width: 800, height: 600)
         .windowStyle(.hiddenTitleBar)
