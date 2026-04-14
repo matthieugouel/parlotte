@@ -435,6 +435,8 @@ struct MessageBubble: View {
     @State private var isHovered = false
     @State private var showDeleteConfirm = false
     @State private var showReactionPicker = false
+    @State private var cachedAttributedString: AttributedString?
+    @State private var cachedFormattedBody: String?
 
     private var senderName: String {
         let userId = message.sender
@@ -540,60 +542,8 @@ struct MessageBubble: View {
                     )
                 }
             }
-
-            Spacer(minLength: 0)
-
-            // Floating action toolbar on hover
-            if (isHovered || showReactionPicker) && !isEditing {
-                HStack(spacing: Spacing.xs) {
-                    Button { onReply() } label: {
-                        Image(systemName: "arrowshape.turn.up.left")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Reply")
-
-                    Button { showReactionPicker = true } label: {
-                        Image(systemName: "face.smiling")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.plain)
-                    .help("React")
-                    .popover(isPresented: $showReactionPicker) {
-                        ReactionPicker { key in
-                            showReactionPicker = false
-                            onReact(key)
-                        }
-                    }
-
-                    if isOwnMessage {
-                        Button {
-                            editText = message.body
-                            isEditing = true
-                        } label: {
-                            Image(systemName: "pencil")
-                                .font(.caption)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Edit")
-
-                        Button { showDeleteConfirm = true } label: {
-                            Image(systemName: "trash")
-                                .font(.caption)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Delete")
-                    }
-                }
-                .padding(.horizontal, Spacing.sm)
-                .padding(.vertical, Spacing.xs)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.sm)
-                        .fill(AppColor.surfaceRaised)
-                        .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
-                )
-                .transition(.opacity)
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, isGrouped ? Spacing.xxs : Spacing.xs)
@@ -603,17 +553,95 @@ struct MessageBubble: View {
             RoundedRectangle(cornerRadius: Radius.sm)
                 .fill(isHovered ? AppColor.surfaceHover : .clear)
         )
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovered = hovering
+        .overlay(alignment: .topTrailing) {
+            if (isHovered || showReactionPicker) && !isEditing {
+                actionToolbar
+                    .padding(.trailing, Spacing.md)
+                    .offset(y: -Spacing.sm)
+                    .transition(.opacity)
             }
         }
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .onAppear { refreshAttributedCacheIfNeeded() }
+        .onChange(of: message.formattedBody) { _, _ in refreshAttributedCacheIfNeeded() }
         .alert("Delete Message", isPresented: $showDeleteConfirm) {
             Button("Delete", role: .destructive) { onDelete() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Are you sure you want to delete this message?")
         }
+    }
+
+    @ViewBuilder
+    private var actionToolbar: some View {
+        HStack(spacing: Spacing.xs) {
+            Button { onReply() } label: {
+                Image(systemName: "arrowshape.turn.up.left")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .help("Reply")
+
+            Button { showReactionPicker = true } label: {
+                Image(systemName: "face.smiling")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .help("React")
+            .popover(isPresented: $showReactionPicker) {
+                ReactionPicker { key in
+                    showReactionPicker = false
+                    onReact(key)
+                }
+            }
+
+            if isOwnMessage {
+                Button {
+                    editText = message.body
+                    isEditing = true
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .help("Edit")
+
+                Button { showDeleteConfirm = true } label: {
+                    Image(systemName: "trash")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .help("Delete")
+            }
+        }
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.sm)
+                .fill(AppColor.surfaceRaised)
+                .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+        )
+    }
+
+    private func refreshAttributedCacheIfNeeded() {
+        if cachedFormattedBody == message.formattedBody { return }
+        cachedFormattedBody = message.formattedBody
+        cachedAttributedString = Self.buildAttributedString(from: message.formattedBody)
+    }
+
+    private static func buildAttributedString(from html: String?) -> AttributedString? {
+        guard let html else { return nil }
+        let wrapped = "<html><body style=\"font-family: -apple-system; font-size: 14px;\">\(html)</body></html>"
+        guard let data = wrapped.data(using: .utf8),
+              let nsAttr = try? NSAttributedString(
+                  data: data,
+                  options: [.documentType: NSAttributedString.DocumentType.html,
+                            .characterEncoding: String.Encoding.utf8.rawValue],
+                  documentAttributes: nil
+              ) else { return nil }
+        return try? AttributedString(nsAttr, including: \.swiftUI)
     }
 
     @ViewBuilder
@@ -633,32 +661,19 @@ struct MessageBubble: View {
             Label(message.body, systemImage: "location")
                 .foregroundStyle(.secondary)
         case "emote":
-            if let attributed = formattedAttributedString {
+            if let attributed = cachedAttributedString {
                 Text("* \(senderName) ") + Text(attributed)
             } else {
                 Text("* \(senderName) \(message.body)")
                     .italic()
             }
         default:
-            if let attributed = formattedAttributedString {
+            if let attributed = cachedAttributedString {
                 Text(attributed)
             } else {
                 Text(message.body)
             }
         }
-    }
-
-    private var formattedAttributedString: AttributedString? {
-        guard let html = message.formattedBody else { return nil }
-        let wrapped = "<html><body style=\"font-family: -apple-system; font-size: 14px;\">\(html)</body></html>"
-        guard let data = wrapped.data(using: .utf8),
-              let nsAttr = try? NSAttributedString(
-                  data: data,
-                  options: [.documentType: NSAttributedString.DocumentType.html,
-                            .characterEncoding: String.Encoding.utf8.rawValue],
-                  documentAttributes: nil
-              ) else { return nil }
-        return try? AttributedString(nsAttr, including: \.swiftUI)
     }
 
     private var formattedTime: String {
