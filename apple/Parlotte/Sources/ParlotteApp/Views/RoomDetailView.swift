@@ -196,7 +196,7 @@ struct RoomDetailView: View {
                     let canSend = !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     Button { send() } label: {
                         Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 24))
+                            .font(.system(size: 18))
                             .foregroundStyle(canSend ? AppColor.accent : AppColor.textTertiary)
                     }
                     .buttonStyle(.plain)
