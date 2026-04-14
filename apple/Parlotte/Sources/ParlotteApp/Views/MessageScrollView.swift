@@ -62,6 +62,43 @@ struct MessageScrollView<Content: View>: NSViewRepresentable {
         widthConstraint.isActive = true
         context.coordinator.widthConstraint = widthConstraint
 
+        // Permanent stick-to-bottom observer. Async-loading content (images
+        // resolving to their real aspect ratio, formatted text reflowing) can
+        // grow the document height *after* a one-shot scroll-to-bottom has
+        // already fired. This observer runs on every frame change and snaps
+        // back to the bottom whenever the user was sitting there.
+        flippedDocumentView.postsFrameChangedNotifications = true
+        context.coordinator.contentFrameObserver = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification,
+            object: flippedDocumentView,
+            queue: .main
+        ) { [weak scrollView] _ in
+            guard let scrollView else { return }
+            let coord = context.coordinator
+            let newHeight = scrollView.documentView?.frame.height ?? 0
+            let prevHeight = coord.lastContentHeight
+            coord.lastContentHeight = newHeight
+
+            // Skip while loading older messages — preserveDistanceFromBottom
+            // owns the scroll position during that window.
+            if coord.isFrozen { return }
+            // Skip until the initial scroll-to-bottom has fired, so we don't
+            // race the one-shot setup logic in updateNSView.
+            if !coord.hasScrolledToBottom { return }
+
+            let currentOffset = scrollView.contentView.bounds.origin.y
+            let visibleHeight = scrollView.contentView.bounds.height
+            if let target = MessageScrollDecision.stickToBottomOffset(
+                currentOffset: currentOffset,
+                visibleHeight: visibleHeight,
+                previousContentHeight: prevHeight,
+                newContentHeight: newHeight
+            ) {
+                scrollView.contentView.scroll(to: NSPoint(x: 0, y: target))
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+            }
+        }
+
         // Continuously track scroll position for distance-from-bottom and scroll-to-top
         let clipView = scrollView.contentView
         clipView.postsBoundsChangedNotifications = true
@@ -179,6 +216,7 @@ struct MessageScrollView<Content: View>: NSViewRepresentable {
         var widthConstraint: NSLayoutConstraint?
         var scrollObserver: NSObjectProtocol?
         var frameObserver: NSObjectProtocol?
+        var contentFrameObserver: NSObjectProtocol?
         var debounceTimer: Timer?
         var fallbackTimer: Timer?
         var hasScrolledToBottom = false
@@ -186,6 +224,7 @@ struct MessageScrollView<Content: View>: NSViewRepresentable {
         var lastKnownLastItemId: String?
         var pendingScrollToTop = false
         var pendingAction: ScrollAction?
+        var lastContentHeight: CGFloat = 0
 
         // Continuously tracked by the bounds-change observer
         var lastDistanceFromBottom: CGFloat = 0
@@ -266,6 +305,9 @@ struct MessageScrollView<Content: View>: NSViewRepresentable {
                 NotificationCenter.default.removeObserver(observer)
             }
             if let observer = frameObserver {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            if let observer = contentFrameObserver {
                 NotificationCenter.default.removeObserver(observer)
             }
         }
