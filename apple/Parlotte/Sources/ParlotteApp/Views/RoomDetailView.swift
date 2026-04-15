@@ -1059,7 +1059,7 @@ private struct MediaFileView: View {
                 do {
                     try pending.write(to: destination)
                 } catch {
-                    errorText = error.localizedDescription
+                    errorText = error.displayMessage
                 }
                 return
             }
@@ -1074,7 +1074,7 @@ private struct MediaFileView: View {
             do {
                 try data.write(to: destination)
             } catch {
-                errorText = error.localizedDescription
+                errorText = error.displayMessage
             }
         }
     }

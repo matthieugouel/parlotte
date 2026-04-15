@@ -182,7 +182,7 @@ public final class AppState {
             await refreshRooms()
             startSyncLoop()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
 
         isLoading = false
@@ -213,7 +213,7 @@ public final class AppState {
             await refreshRooms()
             startSyncLoop()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
 
         isLoading = false
@@ -319,7 +319,7 @@ public final class AppState {
             rooms = updated
             return hasNewMessages
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
             return false
         }
     }
@@ -453,7 +453,7 @@ public final class AppState {
         do {
             data = try Data(contentsOf: fileURL)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
             return
         }
 
@@ -500,7 +500,7 @@ public final class AppState {
         } catch {
             messages.removeAll { $0.eventId == placeholder.eventId }
             pendingAttachments.removeValue(forKey: placeholder.eventId)
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
     }
 
@@ -541,7 +541,7 @@ public final class AppState {
             try await client.sendMessage(roomId: roomId, body: trimmed)
         } catch {
             messages.removeAll { $0.eventId == placeholder.eventId }
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
     }
 
@@ -550,7 +550,7 @@ public final class AppState {
         do {
             _ = try await client.createRoom(name: name, isPublic: isPublic)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
     }
 
@@ -559,7 +559,7 @@ public final class AppState {
         do {
             return try await client.publicRooms()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
             return []
         }
     }
@@ -569,7 +569,7 @@ public final class AppState {
         do {
             try await client.joinRoom(roomId: roomId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
     }
 
@@ -578,7 +578,7 @@ public final class AppState {
         do {
             return try await client.roomMembers(roomId: roomId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
             return []
         }
     }
@@ -591,7 +591,7 @@ public final class AppState {
                 selectedRoomId = nil
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
     }
 
@@ -608,7 +608,7 @@ public final class AppState {
             try await client.sendReply(roomId: roomId, eventId: eventId, body: trimmed)
         } catch {
             messages.removeAll { $0.eventId == placeholder.eventId }
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
     }
 
@@ -631,7 +631,7 @@ public final class AppState {
                 if let idx = messages.firstIndex(where: { $0.eventId == eventId }) {
                     messages[idx].reactions.append(existing)
                 }
-                errorMessage = error.localizedDescription
+                errorMessage = error.displayMessage
             }
         } else {
             // Optimistic add
@@ -657,7 +657,7 @@ public final class AppState {
                 if let idx = messages.firstIndex(where: { $0.eventId == eventId }) {
                     messages[idx].reactions.removeAll { $0.eventId == optimisticReaction.eventId }
                 }
-                errorMessage = error.localizedDescription
+                errorMessage = error.displayMessage
             }
         }
     }
@@ -682,7 +682,7 @@ public final class AppState {
                 messages[idx].formattedBody = oldFormatted
                 messages[idx].isEdited = wasEdited
             }
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
     }
 
@@ -696,7 +696,7 @@ public final class AppState {
             try await client.redactMessage(roomId: roomId, eventId: eventId)
         } catch {
             messages.insert(removed, at: min(idx, messages.count))
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
     }
 
@@ -747,7 +747,7 @@ public final class AppState {
             if let idx = rooms.firstIndex(where: { $0.id == roomId }) {
                 rooms[idx].displayName = oldName
             }
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
 
         isUpdatingRoomSettings = false
@@ -770,7 +770,7 @@ public final class AppState {
             if let idx = rooms.firstIndex(where: { $0.id == roomId }) {
                 rooms[idx].topic = oldTopic
             }
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
 
         isUpdatingRoomSettings = false
@@ -781,7 +781,7 @@ public final class AppState {
         do {
             try await client.inviteUser(roomId: roomId, userId: userId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
     }
 
@@ -847,7 +847,7 @@ public final class AppState {
             updateOwnMemberProfile()
         } catch {
             displayName = oldName
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
 
         isUpdatingProfile = false
@@ -868,7 +868,7 @@ public final class AppState {
             updateOwnMemberProfile()
         } catch {
             avatarUrl = oldUrl
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
 
         isUpdatingProfile = false
@@ -889,7 +889,7 @@ public final class AppState {
             updateOwnMemberProfile()
         } catch {
             avatarUrl = oldUrl
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
 
         isUpdatingProfile = false
@@ -909,7 +909,7 @@ public final class AppState {
             pendingRecoveryKey = key
             recoveryState = await client.recoveryState()
         } catch {
-            recoveryErrorMessage = error.localizedDescription
+            recoveryErrorMessage = error.displayMessage
             recoveryState = await client.recoveryState()
         }
         isUpdatingRecovery = false
@@ -923,7 +923,7 @@ public final class AppState {
             try await client.disableRecovery()
             recoveryState = await client.recoveryState()
         } catch {
-            recoveryErrorMessage = error.localizedDescription
+            recoveryErrorMessage = error.displayMessage
         }
         isUpdatingRecovery = false
     }
@@ -936,7 +936,7 @@ public final class AppState {
             try await client.recover(recoveryKey: recoveryKey)
             recoveryState = await client.recoveryState()
         } catch {
-            recoveryErrorMessage = error.localizedDescription
+            recoveryErrorMessage = error.displayMessage
         }
         isUpdatingRecovery = false
     }
