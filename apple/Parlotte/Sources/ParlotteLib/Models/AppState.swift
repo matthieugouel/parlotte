@@ -36,6 +36,13 @@ public final class AppState {
     /// Last error from a recovery op, scoped so it doesn't get mixed with
     /// the global `errorMessage`. Cleared at the start of each recovery op.
     public var recoveryErrorMessage: String?
+    /// Set when login restores a session and finds `recoveryState == .incomplete`.
+    /// Drives a post-login prompt urging the user to enter their recovery key.
+    /// Cleared when the user enters the key or explicitly dismisses.
+    public var isPromptingRecoveryEntry = false
+    /// Set when logout detects this is the only device AND recovery isn't enabled.
+    /// Drives a confirmation dialog before the logout actually proceeds.
+    public var isConfirmingLastDeviceLogout = false
 
     /// UI appearance preference. Persisted per-profile in UserDefaults.
     public var appearance: AppearanceMode = .system {
@@ -200,6 +207,9 @@ public final class AppState {
             try await client.syncOnce()
             await fetchProfile()
             await refreshRecoveryState()
+            if recoveryState == .incomplete {
+                isPromptingRecoveryEntry = true
+            }
             await refreshRooms()
             startSyncLoop()
         } catch {
@@ -233,6 +243,9 @@ public final class AppState {
             try await client.syncOnce()
             await fetchProfile()
             await refreshRecoveryState()
+            if recoveryState == .incomplete {
+                isPromptingRecoveryEntry = true
+            }
             await refreshRooms()
             startSyncLoop()
         } catch {
@@ -242,7 +255,24 @@ public final class AppState {
         }
     }
 
+    /// Entry point for the logout button. Checks whether this is the user's
+    /// last device with no recovery enabled — if so, raises a confirmation
+    /// flag instead of logging out immediately. Callers who have already
+    /// confirmed (or don't need the warning) should call `logout()` directly.
+    public func requestLogout() async {
+        guard let client else { return }
+        if recoveryState != .enabled {
+            let last = (try? await client.isLastDevice()) ?? nil
+            if last == true {
+                isConfirmingLastDeviceLogout = true
+                return
+            }
+        }
+        await logout()
+    }
+
     public func logout() async {
+        isConfirmingLastDeviceLogout = false
         client?.stopSync()
         isSyncActive = false
         try? await client?.logout()
@@ -258,6 +288,7 @@ public final class AppState {
         recoveryState = .unknown
         pendingRecoveryKey = nil
         recoveryErrorMessage = nil
+        isPromptingRecoveryEntry = false
         pendingAttachments.removeAll()
         mediaCache.removeAllObjects()
         clearSavedSession()

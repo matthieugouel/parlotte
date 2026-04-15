@@ -375,7 +375,7 @@ private struct RecoveryKeyDisplaySheet: View {
     }
 }
 
-private struct RecoveryKeyEntrySheet: View {
+struct RecoveryKeyEntrySheet: View {
     let onSubmit: (String) -> Void
     let onCancel: () -> Void
 

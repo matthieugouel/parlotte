@@ -43,6 +43,7 @@ public protocol MatrixClientProtocol: Sendable {
     func enableRecovery(passphrase: String?) async throws -> String
     func disableRecovery() async throws
     func recover(recoveryKey: String) async throws
+    func isLastDevice() async throws -> Bool?
 }
 
 extension MatrixClient: MatrixClientProtocol {}

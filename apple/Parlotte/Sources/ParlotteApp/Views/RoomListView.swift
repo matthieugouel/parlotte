@@ -94,7 +94,7 @@ struct RoomListView: View {
 
                 Spacer()
 
-                Button { Task { await appState.logout() } } label: {
+                Button { Task { await appState.requestLogout() } } label: {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
                         .font(.body)
                         .foregroundStyle(AppColor.textSecondary)

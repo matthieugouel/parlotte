@@ -1179,6 +1179,24 @@ impl ParlotteClient {
         self.client().encryption().recovery().state().into()
     }
 
+    /// Check whether the current session is the only device owning the
+    /// cross-signing secrets. Used to warn the user before logout that
+    /// they'll lose access to encrypted history if they haven't set up
+    /// key backup. Returns `None` if the answer can't be determined
+    /// (e.g. cross-signing isn't set up yet).
+    pub fn is_last_device(&self) -> Result<Option<bool>> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            client
+                .encryption()
+                .recovery()
+                .is_last_device()
+                .await
+                .map(Some)
+                .or_else(|_| Ok(None))
+        })
+    }
+
     /// Enable recovery: bootstraps cross-signing (if not already done),
     /// creates a server-side key backup, and a new secret storage key.
     /// Returns the base58 recovery key the user must save.

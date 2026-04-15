@@ -84,6 +84,9 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var disableRecoveryError: Error?
     var recoverCalls: [String] = []
     var recoverError: Error?
+    var isLastDeviceResult: Bool? = nil
+    var isLastDeviceError: Error?
+    var isLastDeviceCalls = 0
 
     private func errorFor(_ specific: Error?) throws {
         if let err = specific ?? shouldThrow { throw err }
@@ -257,5 +260,11 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     func recover(recoveryKey: String) async throws {
         recoverCalls.append(recoveryKey)
         try errorFor(recoverError)
+    }
+
+    func isLastDevice() async throws -> Bool? {
+        isLastDeviceCalls += 1
+        try errorFor(isLastDeviceError)
+        return isLastDeviceResult
     }
 }

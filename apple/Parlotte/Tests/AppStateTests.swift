@@ -1422,4 +1422,43 @@ struct AppStateTests {
         #expect(appState.recoveryState == .unknown)
         #expect(appState.pendingRecoveryKey == nil)
     }
+
+    @Test("requestLogout prompts when last device without recovery")
+    mutating func requestLogoutWarnsWhenLastDeviceNoRecovery() async {
+        appState.isLoggedIn = true
+        appState.recoveryState = .disabled
+        mock.isLastDeviceResult = true
+
+        await appState.requestLogout()
+
+        #expect(appState.isConfirmingLastDeviceLogout == true)
+        #expect(appState.isLoggedIn == true)
+        #expect(mock.logoutCalls == 0)
+    }
+
+    @Test("requestLogout skips warning when recovery is enabled")
+    mutating func requestLogoutSkipsWarningWhenRecoveryEnabled() async {
+        appState.isLoggedIn = true
+        appState.recoveryState = .enabled
+        mock.isLastDeviceResult = true
+
+        await appState.requestLogout()
+
+        #expect(appState.isConfirmingLastDeviceLogout == false)
+        #expect(appState.isLoggedIn == false)
+        #expect(mock.logoutCalls == 1)
+    }
+
+    @Test("requestLogout skips warning when not last device")
+    mutating func requestLogoutSkipsWarningWhenNotLastDevice() async {
+        appState.isLoggedIn = true
+        appState.recoveryState = .disabled
+        mock.isLastDeviceResult = false
+
+        await appState.requestLogout()
+
+        #expect(appState.isConfirmingLastDeviceLogout == false)
+        #expect(appState.isLoggedIn == false)
+        #expect(mock.logoutCalls == 1)
+    }
 }

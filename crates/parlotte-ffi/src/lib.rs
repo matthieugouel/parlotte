@@ -521,6 +521,10 @@ impl ParlotteClientFFI {
     pub fn recover(&self, recovery_key: String) -> Result<(), ParlotteError> {
         Ok(self.inner.recover(&recovery_key)?)
     }
+
+    pub fn is_last_device(&self) -> Result<Option<bool>, ParlotteError> {
+        Ok(self.inner.is_last_device()?)
+    }
 }
 
 #[cfg(test)]

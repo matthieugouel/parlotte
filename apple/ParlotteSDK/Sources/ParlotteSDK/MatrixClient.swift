@@ -284,4 +284,11 @@ public actor MatrixClient {
             try ffi.recover(recoveryKey: recoveryKey)
         }.value
     }
+
+    public func isLastDevice() async throws -> Bool? {
+        let ffi = self.ffi
+        return try await Task.detached {
+            try ffi.isLastDevice()
+        }.value
+    }
 }

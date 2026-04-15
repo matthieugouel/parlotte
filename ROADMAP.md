@@ -60,11 +60,11 @@ work that doesn't belong in any other category.
 - [x] Legacy SSO login (browser-based, works with most Synapse servers)
 - [ ] Native OIDC login (MAS / OpenID Connect)
 - [ ] **[v1]** Device verification (cross-signing)
-- [ ] **[v1]** Key backup and recovery (reinstall must not lose encrypted history)
+- [x] **[v1]** Key backup and recovery (reinstall must not lose encrypted history)
   - [x] Core + FFI: enable/disable/recover + `RecoveryState`
   - [x] Settings UI: status, enable, recovery-key display, key entry
-  - [ ] Post-login prompt when `RecoveryState::Incomplete` (new device)
-  - [ ] `is_last_device` warning before logout
+  - [x] Post-login prompt when `RecoveryState::Incomplete` (new device)
+  - [x] `is_last_device` warning before logout
 
 ## Testing
 - [x] Unit tests for input validation and error paths (parlotte-core)

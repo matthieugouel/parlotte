@@ -91,5 +91,33 @@ struct MainView: View {
             }
         }
         .ignoresSafeArea()
+        .sheet(isPresented: Binding(
+            get: { appState.isPromptingRecoveryEntry },
+            set: { appState.isPromptingRecoveryEntry = $0 }
+        )) {
+            RecoveryKeyEntrySheet { key in
+                appState.isPromptingRecoveryEntry = false
+                Task { await appState.recover(recoveryKey: key) }
+            } onCancel: {
+                appState.isPromptingRecoveryEntry = false
+            }
+        }
+        .confirmationDialog(
+            "Log out without encrypted backup?",
+            isPresented: Binding(
+                get: { appState.isConfirmingLastDeviceLogout },
+                set: { appState.isConfirmingLastDeviceLogout = $0 }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Log Out Anyway", role: .destructive) {
+                Task { await appState.logout() }
+            }
+            Button("Cancel", role: .cancel) {
+                appState.isConfirmingLastDeviceLogout = false
+            }
+        } message: {
+            Text("This is your only device. Without encrypted backup enabled, you'll permanently lose access to encrypted messages when you log out.")
+        }
     }
 }
