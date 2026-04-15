@@ -60,7 +60,7 @@ work that doesn't belong in any other category.
 - [x] Legacy SSO login (browser-based, works with most Synapse servers)
 - [ ] Native OIDC login (MAS / OpenID Connect)
 - [ ] **[v1]** Device verification (cross-signing)
-- [x] **[v1]** Key backup and recovery (reinstall must not lose encrypted history)
+- [x] Key backup and recovery (reinstall must not lose encrypted history)
   - [x] Core + FFI: enable/disable/recover + `RecoveryState`
   - [x] Settings UI: status, enable, recovery-key display, key entry
   - [x] Post-login prompt when `RecoveryState::Incomplete` (new device)
