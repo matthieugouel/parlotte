@@ -1,5 +1,9 @@
 # Parlotte Roadmap (macOS app)
 
+Items tagged **[v1]** are targeted for the first App Store release. See the
+[Release](#release-app-store-v1) section for branding and store-submission
+work that doesn't belong in any other category.
+
 ## Core
 - [x] Login / logout with session persistence
 - [x] Apple build pipeline (Rust -> XCFramework -> Swift bindings)
@@ -7,7 +11,7 @@
 - [x] Multi-profile support (`--profile` flag for testing)
 - [x] Debug logging (`--debug` flag)
 - [x] Background sync (persistent connection instead of 5s polling)
-- [ ] Push notifications
+- [ ] **[v1]** Push notifications (APNs entitlement, Sygnal/pusher config, tap-to-open-room)
 - [ ] Sliding Sync (performance at scale)
 
 ## Rooms
@@ -51,13 +55,16 @@
 - [x] Sidebar header with user avatar and sync status
 - [x] Empty conversation state
 - [ ] Search (messages, rooms)
-- [ ] Message hover action toolbar
 
 ## Security
 - [x] Legacy SSO login (browser-based, works with most Synapse servers)
 - [ ] Native OIDC login (MAS / OpenID Connect)
-- [ ] Device verification (cross-signing)
-- [ ] Key backup and recovery
+- [ ] **[v1]** Device verification (cross-signing)
+- [ ] **[v1]** Key backup and recovery (reinstall must not lose encrypted history)
+  - [x] Core + FFI: enable/disable/recover + `RecoveryState`
+  - [x] Settings UI: status, enable, recovery-key display, key entry
+  - [ ] Post-login prompt when `RecoveryState::Incomplete` (new device)
+  - [ ] `is_last_device` warning before logout
 
 ## Testing
 - [x] Unit tests for input validation and error paths (parlotte-core)
@@ -70,3 +77,23 @@
 - [x] `ax-inspect` accessibility driver (real keystroke typing, button clicks, field input, wait-for)
 - [ ] CI pipeline (GitHub Actions: build, test, clippy, fmt)
 - [ ] Persistent sync loop integration test (start sync, receive callback, stop)
+- [ ] **[v1]** Crash reporting (Sentry or MetricKit) for post-launch triage
+
+## Release (App Store v1)
+
+Feature work tagged **[v1]** lives in the sections above. This section covers
+only branding and store-submission artifacts.
+
+### Branding
+- [ ] App icon (1024×1024 master + full macOS icon set)
+- [ ] App name and bundle identifier finalized
+- [ ] Launch screen / first-run experience
+- [ ] Marketing screenshots for the App Store listing
+- [ ] App Store description, keywords, category, support URL
+
+### Submission
+- [ ] Privacy manifest (`PrivacyInfo.xcprivacy`) declaring data collection and required-reason APIs
+- [ ] Privacy policy + terms of service URLs
+- [ ] Mac App Store distribution profile and code signing
+- [ ] Notarization and hardened runtime
+- [ ] Sandbox entitlements audit (network, keychain, user-selected files)

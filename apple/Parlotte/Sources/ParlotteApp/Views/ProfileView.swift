@@ -11,8 +11,41 @@ struct ProfileView: View {
     @State private var editingName = ""
     @State private var isEditingName = false
     @State private var avatarData: Data?
+    @State private var isShowingRecoveryEntry = false
 
     var body: some View {
+        ScrollView {
+            contentStack
+        }
+        .frame(width: 360, height: 560)
+        .task {
+            if let url = appState.avatarUrl {
+                avatarData = await appState.loadMedia(mxcUri: url)
+            }
+            await appState.refreshRecoveryState()
+        }
+        .sheet(isPresented: Binding(
+            get: { appState.pendingRecoveryKey != nil },
+            set: { if !$0 { appState.dismissPendingRecoveryKey() } }
+        )) {
+            if let key = appState.pendingRecoveryKey {
+                RecoveryKeyDisplaySheet(recoveryKey: key) {
+                    appState.dismissPendingRecoveryKey()
+                }
+            }
+        }
+        .sheet(isPresented: $isShowingRecoveryEntry) {
+            RecoveryKeyEntrySheet { key in
+                isShowingRecoveryEntry = false
+                Task { await appState.recover(recoveryKey: key) }
+            } onCancel: {
+                isShowingRecoveryEntry = false
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var contentStack: some View {
         VStack(spacing: Spacing.xl) {
             Text("Profile")
                 .font(.system(size: 18, weight: .semibold))
@@ -119,17 +152,110 @@ struct ProfileView: View {
                     .controlSize(.small)
             }
 
-            Spacer()
+            Divider()
+                .opacity(0.5)
+
+            recoverySection
+
+            Spacer(minLength: Spacing.md)
 
             Button("Done") { dismiss() }
                 .keyboardShortcut(.defaultAction)
         }
         .padding(Spacing.xxl)
-        .frame(width: 360, height: 520)
-        .task {
-            if let url = appState.avatarUrl {
-                avatarData = await appState.loadMedia(mxcUri: url)
+    }
+
+    @ViewBuilder
+    private var recoverySection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("Encrypted Backup")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(AppColor.textTertiary)
+                .textCase(.uppercase)
+
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: recoveryIconName)
+                    .foregroundStyle(recoveryIconColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(recoveryStatusTitle)
+                        .font(.messageBody)
+                    Text(recoveryStatusSubtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
             }
+
+            HStack(spacing: Spacing.sm) {
+                switch appState.recoveryState {
+                case .disabled, .unknown:
+                    Button("Enable Backup") {
+                        Task { await appState.enableRecovery() }
+                    }
+                    .disabled(appState.isUpdatingRecovery)
+                case .incomplete:
+                    Button("Enter Recovery Key") {
+                        isShowingRecoveryEntry = true
+                    }
+                    .disabled(appState.isUpdatingRecovery)
+                case .enabled:
+                    Button("Disable", role: .destructive) {
+                        Task { await appState.disableRecovery() }
+                    }
+                    .disabled(appState.isUpdatingRecovery)
+                }
+
+                if appState.isUpdatingRecovery {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            if let error = appState.recoveryErrorMessage {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var recoveryIconName: String {
+        switch appState.recoveryState {
+        case .enabled: return "lock.shield.fill"
+        case .incomplete: return "exclamationmark.shield.fill"
+        case .disabled, .unknown: return "lock.shield"
+        }
+    }
+
+    private var recoveryIconColor: Color {
+        switch appState.recoveryState {
+        case .enabled: return .green
+        case .incomplete: return .orange
+        case .disabled, .unknown: return AppColor.textSecondary
+        }
+    }
+
+    private var recoveryStatusTitle: String {
+        switch appState.recoveryState {
+        case .enabled: return "Enabled"
+        case .incomplete: return "Recovery key required"
+        case .disabled: return "Disabled"
+        case .unknown: return "Checking…"
+        }
+    }
+
+    private var recoveryStatusSubtitle: String {
+        switch appState.recoveryState {
+        case .enabled:
+            return "Encrypted history can be restored on a new device."
+        case .incomplete:
+            return "Enter your recovery key to finish setting up this device."
+        case .disabled:
+            return "If you log out or reinstall, you'll lose access to encrypted messages."
+        case .unknown:
+            return "Fetching status from the server."
         }
     }
 
@@ -192,5 +318,99 @@ struct ProfileView: View {
             return String(userId[userId.index(after: userId.startIndex)..<colon])
         }
         return userId
+    }
+}
+
+private struct RecoveryKeyDisplaySheet: View {
+    let recoveryKey: String
+    let onDismiss: () -> Void
+
+    @State private var hasCopied = false
+    @State private var hasConfirmed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Save your recovery key")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("This key restores encrypted messages on a new device. Store it in a password manager — we can't show it again.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text(recoveryKey)
+                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(Spacing.md)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.sm)
+                        .fill(AppColor.surfaceHover)
+                )
+
+            HStack(spacing: Spacing.sm) {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(recoveryKey, forType: .string)
+                    hasCopied = true
+                } label: {
+                    Label(hasCopied ? "Copied" : "Copy", systemImage: hasCopied ? "checkmark" : "doc.on.doc")
+                }
+
+                Spacer()
+
+                Toggle("I've saved this key", isOn: $hasConfirmed)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12))
+            }
+
+            Button("Done") { onDismiss() }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!hasConfirmed)
+                .frame(maxWidth: .infinity)
+        }
+        .padding(Spacing.xxl)
+        .frame(width: 420)
+    }
+}
+
+private struct RecoveryKeyEntrySheet: View {
+    let onSubmit: (String) -> Void
+    let onCancel: () -> Void
+
+    @State private var recoveryKey = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Enter your recovery key")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("Paste the recovery key you saved when you enabled encrypted backup.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            TextField("Recovery key", text: $recoveryKey, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 13, design: .monospaced))
+                .lineLimit(3...5)
+
+            HStack {
+                Button("Cancel", role: .cancel) { onCancel() }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Unlock") {
+                    let trimmed = recoveryKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return }
+                    onSubmit(trimmed)
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(recoveryKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(Spacing.xxl)
+        .frame(width: 420)
     }
 }

@@ -74,6 +74,17 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var setRoomNameError: Error?
     var setRoomTopicError: Error?
 
+    // Recovery
+    var recoveryStateResult: RecoveryState = .disabled
+    var recoveryStateCalls = 0
+    var enableRecoveryCalls: [String?] = []
+    var enableRecoveryResult: String = "Es Tb TEST RECOVERY KEY"
+    var enableRecoveryError: Error?
+    var disableRecoveryCalls = 0
+    var disableRecoveryError: Error?
+    var recoverCalls: [String] = []
+    var recoverError: Error?
+
     private func errorFor(_ specific: Error?) throws {
         if let err = specific ?? shouldThrow { throw err }
     }
@@ -226,4 +237,25 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     }
     func startSync(listener: ParlotteSyncListener) throws {}
     var isSyncing: Bool { false }
+
+    func recoveryState() async -> RecoveryState {
+        recoveryStateCalls += 1
+        return recoveryStateResult
+    }
+
+    func enableRecovery(passphrase: String?) async throws -> String {
+        enableRecoveryCalls.append(passphrase)
+        try errorFor(enableRecoveryError)
+        return enableRecoveryResult
+    }
+
+    func disableRecovery() async throws {
+        disableRecoveryCalls += 1
+        try errorFor(disableRecoveryError)
+    }
+
+    func recover(recoveryKey: String) async throws {
+        recoverCalls.append(recoveryKey)
+        try errorFor(recoverError)
+    }
 }

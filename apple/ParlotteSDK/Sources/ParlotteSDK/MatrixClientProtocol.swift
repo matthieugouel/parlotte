@@ -39,6 +39,10 @@ public protocol MatrixClientProtocol: Sendable {
     func startSync(listener: ParlotteSyncListener) throws
     func stopSync()
     var isSyncing: Bool { get }
+    func recoveryState() async -> RecoveryState
+    func enableRecovery(passphrase: String?) async throws -> String
+    func disableRecovery() async throws
+    func recover(recoveryKey: String) async throws
 }
 
 extension MatrixClient: MatrixClientProtocol {}

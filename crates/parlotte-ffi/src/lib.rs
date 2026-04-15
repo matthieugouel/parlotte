@@ -20,9 +20,9 @@ use parlotte_core::{
     MessageBatch as CoreMessageBatch, MessageInfo as CoreMessageInfo,
     ParlotteClient as CoreClient, ParlotteError as CoreError,
     PublicRoomInfo as CorePublicRoomInfo, ReactionInfo as CoreReactionInfo,
-    RoomInfo as CoreRoomInfo, RoomMemberInfo as CoreRoomMemberInfo,
-    SessionInfo as CoreSessionInfo, SsoProvider as CoreSsoProvider,
-    UserProfile as CoreUserProfile,
+    RecoveryState as CoreRecoveryState, RoomInfo as CoreRoomInfo,
+    RoomMemberInfo as CoreRoomMemberInfo, SessionInfo as CoreSessionInfo,
+    SsoProvider as CoreSsoProvider, UserProfile as CoreUserProfile,
 };
 use std::fmt;
 use std::sync::Arc;
@@ -294,6 +294,25 @@ impl From<CoreUserProfile> for UserProfile {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum RecoveryState {
+    Unknown,
+    Enabled,
+    Disabled,
+    Incomplete,
+}
+
+impl From<CoreRecoveryState> for RecoveryState {
+    fn from(s: CoreRecoveryState) -> Self {
+        match s {
+            CoreRecoveryState::Unknown => RecoveryState::Unknown,
+            CoreRecoveryState::Enabled => RecoveryState::Enabled,
+            CoreRecoveryState::Disabled => RecoveryState::Disabled,
+            CoreRecoveryState::Incomplete => RecoveryState::Incomplete,
+        }
+    }
+}
+
 // -- Callback interfaces --
 
 /// Callback for persistent sync updates.
@@ -485,6 +504,22 @@ impl ParlotteClientFFI {
 
     pub fn is_syncing(&self) -> bool {
         self.inner.is_syncing()
+    }
+
+    pub fn recovery_state(&self) -> RecoveryState {
+        self.inner.recovery_state().into()
+    }
+
+    pub fn enable_recovery(&self, passphrase: Option<String>) -> Result<String, ParlotteError> {
+        Ok(self.inner.enable_recovery(passphrase.as_deref())?)
+    }
+
+    pub fn disable_recovery(&self) -> Result<(), ParlotteError> {
+        Ok(self.inner.disable_recovery()?)
+    }
+
+    pub fn recover(&self, recovery_key: String) -> Result<(), ParlotteError> {
+        Ok(self.inner.recover(&recovery_key)?)
     }
 }
 
@@ -866,6 +901,16 @@ mod tests {
         let ffi: UserProfile = core.into();
         assert!(ffi.display_name.is_none());
         assert!(ffi.avatar_url.is_none());
+    }
+
+    // -- RecoveryState round-trip --
+
+    #[test]
+    fn recovery_state_converts_all_variants() {
+        assert_eq!(RecoveryState::from(CoreRecoveryState::Unknown), RecoveryState::Unknown);
+        assert_eq!(RecoveryState::from(CoreRecoveryState::Enabled), RecoveryState::Enabled);
+        assert_eq!(RecoveryState::from(CoreRecoveryState::Disabled), RecoveryState::Disabled);
+        assert_eq!(RecoveryState::from(CoreRecoveryState::Incomplete), RecoveryState::Incomplete);
     }
 
     // -- Error conversion --

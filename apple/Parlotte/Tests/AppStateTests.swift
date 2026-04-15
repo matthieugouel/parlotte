@@ -2,6 +2,8 @@ import Testing
 import ParlotteSDK
 @testable import ParlotteLib
 
+private struct TestError: Error {}
+
 @MainActor
 @Suite("AppState")
 struct AppStateTests {
@@ -1344,5 +1346,80 @@ struct AppStateTests {
 
         #expect(appState.rooms[0].displayName == "After")
         #expect(appState.rooms[0].topic == "After topic")
+    }
+
+    // MARK: - Recovery
+
+    @Test("refreshRecoveryState pulls current state from the client")
+    mutating func refreshRecoveryStateSyncsValue() async {
+        mock.recoveryStateResult = .enabled
+        await appState.refreshRecoveryState()
+        #expect(appState.recoveryState == .enabled)
+        #expect(mock.recoveryStateCalls == 1)
+    }
+
+    @Test("enableRecovery stores the returned key and refreshes state")
+    mutating func enableRecoverySurfacesKey() async {
+        mock.enableRecoveryResult = "Es Tb MY SECRET KEY"
+        mock.recoveryStateResult = .enabled
+
+        await appState.enableRecovery()
+
+        #expect(appState.pendingRecoveryKey == "Es Tb MY SECRET KEY")
+        #expect(appState.recoveryState == .enabled)
+        #expect(appState.isUpdatingRecovery == false)
+        #expect(mock.enableRecoveryCalls.count == 1)
+    }
+
+    @Test("enableRecovery leaves state untouched on error")
+    mutating func enableRecoveryFailureLeavesStateClean() async {
+        appState.recoveryState = .disabled
+        mock.enableRecoveryError = TestError()
+
+        await appState.enableRecovery()
+
+        #expect(appState.pendingRecoveryKey == nil)
+        #expect(appState.recoveryState == .disabled)
+        #expect(appState.isUpdatingRecovery == false)
+        #expect(appState.recoveryErrorMessage != nil)
+    }
+
+    @Test("disableRecovery refreshes state after success")
+    mutating func disableRecoveryRefreshes() async {
+        appState.recoveryState = .enabled
+        mock.recoveryStateResult = .disabled
+
+        await appState.disableRecovery()
+
+        #expect(mock.disableRecoveryCalls == 1)
+        #expect(appState.recoveryState == .disabled)
+    }
+
+    @Test("recover passes the key to the client")
+    mutating func recoverForwardsKey() async {
+        mock.recoveryStateResult = .enabled
+
+        await appState.recover(recoveryKey: "Es Tb USER ENTERED KEY")
+
+        #expect(mock.recoverCalls == ["Es Tb USER ENTERED KEY"])
+        #expect(appState.recoveryState == .enabled)
+    }
+
+    @Test("dismissPendingRecoveryKey clears the stored key")
+    mutating func dismissClearsPendingKey() {
+        appState.pendingRecoveryKey = "Es Tb SOMETHING"
+        appState.dismissPendingRecoveryKey()
+        #expect(appState.pendingRecoveryKey == nil)
+    }
+
+    @Test("logout resets recovery state")
+    mutating func logoutClearsRecoveryState() async {
+        appState.recoveryState = .enabled
+        appState.pendingRecoveryKey = "Es Tb KEY"
+
+        await appState.logout()
+
+        #expect(appState.recoveryState == .unknown)
+        #expect(appState.pendingRecoveryKey == nil)
     }
 }

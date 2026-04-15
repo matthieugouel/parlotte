@@ -164,6 +164,14 @@ public final class DebugServer: @unchecked Sendable {
             return await cmdRefresh()
         case "logout":
             return await cmdLogout()
+        case "refresh_recovery":
+            return await cmdRefreshRecovery()
+        case "enable_recovery":
+            return await cmdEnableRecovery()
+        case "disable_recovery":
+            return await cmdDisableRecovery()
+        case "recover":
+            return await cmdRecover(args: obj)
         default:
             return (400, Self.errorBody("unknown op: \(op)"))
         }
@@ -217,6 +225,40 @@ public final class DebugServer: @unchecked Sendable {
     private func cmdLogout() async -> (Int, Data) {
         await appState.logout()
         return okResponse([:])
+    }
+
+    private func cmdRefreshRecovery() async -> (Int, Data) {
+        await appState.refreshRecoveryState()
+        let state = await MainActor.run { String(describing: appState.recoveryState) }
+        return okResponse(["recoveryState": state])
+    }
+
+    private func cmdEnableRecovery() async -> (Int, Data) {
+        await appState.enableRecovery()
+        let (state, key, err) = await MainActor.run {
+            (String(describing: appState.recoveryState), appState.pendingRecoveryKey, appState.errorMessage)
+        }
+        if let err { return (500, Self.errorBody(err)) }
+        var extra: [String: Any] = ["recoveryState": state]
+        if let key { extra["recoveryKey"] = key }
+        return okResponse(extra)
+    }
+
+    private func cmdDisableRecovery() async -> (Int, Data) {
+        await appState.disableRecovery()
+        let (state, err) = await MainActor.run { (String(describing: appState.recoveryState), appState.errorMessage) }
+        if let err { return (500, Self.errorBody(err)) }
+        return okResponse(["recoveryState": state])
+    }
+
+    private func cmdRecover(args: [String: Any]) async -> (Int, Data) {
+        guard let key = args["key"] as? String else {
+            return (400, Self.errorBody("missing \"key\""))
+        }
+        await appState.recover(recoveryKey: key)
+        let (state, err) = await MainActor.run { (String(describing: appState.recoveryState), appState.errorMessage) }
+        if let err { return (500, Self.errorBody(err)) }
+        return okResponse(["recoveryState": state])
     }
 
     // MARK: - Helpers
@@ -384,6 +426,9 @@ struct DebugSnapshot: Encodable {
     let isLoadingMoreMessages: Bool
     let typingUsers: [String: [String]]
     let currentRoomTypingUsers: [String]
+    let recoveryState: String
+    let isUpdatingRecovery: Bool
+    let pendingRecoveryKey: String?
 
     @MainActor
     static func from(appState: AppState) -> DebugSnapshot {
@@ -402,7 +447,10 @@ struct DebugSnapshot: Encodable {
             hasMoreMessages: appState.hasMoreMessages,
             isLoadingMoreMessages: appState.isLoadingMoreMessages,
             typingUsers: appState.typingUsers,
-            currentRoomTypingUsers: appState.currentRoomTypingUsers
+            currentRoomTypingUsers: appState.currentRoomTypingUsers,
+            recoveryState: String(describing: appState.recoveryState),
+            isUpdatingRecovery: appState.isUpdatingRecovery,
+            pendingRecoveryKey: appState.pendingRecoveryKey
         )
     }
 }

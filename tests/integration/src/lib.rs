@@ -986,4 +986,37 @@ mod tests {
             after.reactions
         );
     }
+
+    // -- Test: Recovery enable returns a key and flips state --
+
+    #[test]
+    fn recovery_enable_and_disable_roundtrip() {
+        use parlotte_core::RecoveryState;
+        require_synapse();
+        let (client, _user) = register_and_login("recovery_roundtrip");
+
+        // Sync at least once so the recovery state machine is initialised.
+        client.sync_once().unwrap();
+
+        // Fresh account: no secret storage yet.
+        assert!(matches!(
+            client.recovery_state(),
+            RecoveryState::Disabled | RecoveryState::Unknown
+        ));
+
+        let recovery_key = client
+            .enable_recovery(None)
+            .expect("enable_recovery should succeed on a fresh account");
+        assert!(
+            !recovery_key.trim().is_empty(),
+            "recovery key must not be empty"
+        );
+
+        client.sync_once().unwrap();
+        assert_eq!(client.recovery_state(), RecoveryState::Enabled);
+
+        client.disable_recovery().expect("disable_recovery failed");
+        client.sync_once().unwrap();
+        assert_eq!(client.recovery_state(), RecoveryState::Disabled);
+    }
 }

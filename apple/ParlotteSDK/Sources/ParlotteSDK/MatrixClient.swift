@@ -256,4 +256,32 @@ public actor MatrixClient {
     public nonisolated var isSyncing: Bool {
         ffi.isSyncing()
     }
+
+    public func recoveryState() async -> RecoveryState {
+        let ffi = self.ffi
+        return await Task.detached {
+            ffi.recoveryState()
+        }.value
+    }
+
+    public func enableRecovery(passphrase: String?) async throws -> String {
+        let ffi = self.ffi
+        return try await Task.detached {
+            try ffi.enableRecovery(passphrase: passphrase)
+        }.value
+    }
+
+    public func disableRecovery() async throws {
+        let ffi = self.ffi
+        try await Task.detached {
+            try ffi.disableRecovery()
+        }.value
+    }
+
+    public func recover(recoveryKey: String) async throws {
+        let ffi = self.ffi
+        try await Task.detached {
+            try ffi.recover(recoveryKey: recoveryKey)
+        }.value
+    }
 }

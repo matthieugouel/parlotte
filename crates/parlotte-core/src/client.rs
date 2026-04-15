@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use crate::error::{ParlotteError, Result};
 use crate::message::{LoginMethods, MatrixSessionData, MessageBatch, MessageInfo, ReactionInfo, SessionInfo, SsoProvider, UserProfile};
+use crate::recovery::RecoveryState;
 use crate::room::{PublicRoomInfo, RoomInfo, RoomMemberInfo};
 use crate::sync::{SyncListener, SyncManager};
 
@@ -1170,6 +1171,123 @@ impl ParlotteClient {
                     },
                 })
                 .collect())
+        })
+    }
+
+    /// Get the current recovery (key backup + secret storage) state.
+    pub fn recovery_state(&self) -> RecoveryState {
+        self.client().encryption().recovery().state().into()
+    }
+
+    /// Enable recovery: bootstraps cross-signing (if not already done),
+    /// creates a server-side key backup, and a new secret storage key.
+    /// Returns the base58 recovery key the user must save.
+    ///
+    /// If `passphrase` is provided, recovery can be unlocked with either the
+    /// key or the passphrase.
+    ///
+    /// Bootstrapping cross-signing may require user-interactive auth (UIA).
+    /// If the server demands it, this returns a `ParlotteError::Auth` error
+    /// with a message describing the UIA challenge — callers should surface
+    /// that and (for password logins) retry after re-entering the password.
+    pub fn enable_recovery(&self, passphrase: Option<&str>) -> Result<String> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            client
+                .encryption()
+                .bootstrap_cross_signing(None)
+                .await
+                .map_err(|e| {
+                    if e.as_uiaa_response().is_some() {
+                        ParlotteError::Auth {
+                            message: format!(
+                                "server requires re-authentication to set up encryption: {e}"
+                            ),
+                        }
+                    } else {
+                        ParlotteError::Unknown {
+                            message: format!("failed to bootstrap cross-signing: {e}"),
+                        }
+                    }
+                })?;
+
+            let recovery = client.encryption().recovery();
+            let enable = if let Some(p) = passphrase {
+                recovery.enable().with_passphrase(p).wait_for_backups_to_upload()
+            } else {
+                recovery.enable().wait_for_backups_to_upload()
+            };
+            let key = enable.await.map_err(|e| ParlotteError::Unknown {
+                message: format!("failed to enable recovery: {e}"),
+            })?;
+
+            // `enable()` can return Ok with state still Incomplete if the
+            // cross-signing secrets weren't locally cached (e.g. another
+            // device set them up). Treat that as a failure so the UI doesn't
+            // silently claim success.
+            let state: RecoveryState = recovery.state().into();
+            if !matches!(state, RecoveryState::Enabled) {
+                return Err(ParlotteError::Unknown {
+                    message: format!(
+                        "recovery enable finished but state is {state:?}. \
+                         This usually means cross-signing secrets are missing \
+                         from this session — sign in on a device that has them \
+                         and try again, or enter the existing recovery key."
+                    ),
+                });
+            }
+            Ok(key)
+        })
+    }
+
+    /// Disable recovery: tears down the server-side key backup and clears the
+    /// default secret storage key.
+    pub fn disable_recovery(&self) -> Result<()> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            client
+                .encryption()
+                .recovery()
+                .disable()
+                .await
+                .map_err(|e| ParlotteError::Unknown {
+                    message: format!("failed to disable recovery: {e}"),
+                })
+        })
+    }
+
+    /// Use a recovery key (or passphrase) to import secrets into this device.
+    /// Call this after logging in on a new device when `recovery_state` is
+    /// `Incomplete`.
+    pub fn recover(&self, recovery_key: &str) -> Result<()> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            let recovery = client.encryption().recovery();
+            recovery
+                .recover(recovery_key)
+                .await
+                .map_err(|e| ParlotteError::Auth {
+                    message: format!("failed to recover: {e}"),
+                })?;
+
+            // `recover()` can return Ok after "opening" secret storage even
+            // if SSSS doesn't actually contain the cross-signing secrets
+            // (e.g. an earlier enable finished before cross-signing was
+            // bootstrapped, leaving an empty SSSS on the server). The key
+            // works, but nothing useful gets imported.
+            let state: RecoveryState = recovery.state().into();
+            if !matches!(state, RecoveryState::Enabled) {
+                return Err(ParlotteError::Unknown {
+                    message: format!(
+                        "recovery key accepted but state is {state:?}. \
+                         Your server-side backup is missing cross-signing \
+                         secrets — this usually means a previous setup \
+                         didn't complete. You'll need to reset recovery \
+                         (this requires re-authenticating with your password)."
+                    ),
+                });
+            }
+            Ok(())
         })
     }
 }

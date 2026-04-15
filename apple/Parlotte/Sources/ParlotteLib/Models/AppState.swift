@@ -27,6 +27,16 @@ public final class AppState {
     public var avatarUrl: String?
     public var isUpdatingProfile = false
 
+    // Recovery (key backup + secret storage)
+    public var recoveryState: RecoveryState = .unknown
+    public var isUpdatingRecovery = false
+    /// Set after a successful `enableRecovery` so the UI can show the key
+    /// in a save/copy modal. Cleared when the user dismisses it.
+    public var pendingRecoveryKey: String?
+    /// Last error from a recovery op, scoped so it doesn't get mixed with
+    /// the global `errorMessage`. Cleared at the start of each recovery op.
+    public var recoveryErrorMessage: String?
+
     /// UI appearance preference. Persisted per-profile in UserDefaults.
     public var appearance: AppearanceMode = .system {
         didSet {
@@ -189,6 +199,7 @@ public final class AppState {
             isSyncActive = true
             try await client.syncOnce()
             await fetchProfile()
+            await refreshRecoveryState()
             await refreshRooms()
             startSyncLoop()
         } catch {
@@ -221,6 +232,7 @@ public final class AppState {
             isCheckingSession = false
             try await client.syncOnce()
             await fetchProfile()
+            await refreshRecoveryState()
             await refreshRooms()
             startSyncLoop()
         } catch {
@@ -243,6 +255,9 @@ public final class AppState {
         memberProfiles = [:]
         typingUsers = [:]
         selectedRoomId = nil
+        recoveryState = .unknown
+        pendingRecoveryKey = nil
+        recoveryErrorMessage = nil
         pendingAttachments.removeAll()
         mediaCache.removeAllObjects()
         clearSavedSession()
@@ -847,6 +862,56 @@ public final class AppState {
         }
 
         isUpdatingProfile = false
+    }
+
+    public func refreshRecoveryState() async {
+        guard let client else { return }
+        recoveryState = await client.recoveryState()
+    }
+
+    public func enableRecovery() async {
+        guard let client, !isUpdatingRecovery else { return }
+        isUpdatingRecovery = true
+        recoveryErrorMessage = nil
+        do {
+            let key = try await client.enableRecovery(passphrase: nil)
+            pendingRecoveryKey = key
+            recoveryState = await client.recoveryState()
+        } catch {
+            recoveryErrorMessage = error.localizedDescription
+            recoveryState = await client.recoveryState()
+        }
+        isUpdatingRecovery = false
+    }
+
+    public func disableRecovery() async {
+        guard let client, !isUpdatingRecovery else { return }
+        isUpdatingRecovery = true
+        recoveryErrorMessage = nil
+        do {
+            try await client.disableRecovery()
+            recoveryState = await client.recoveryState()
+        } catch {
+            recoveryErrorMessage = error.localizedDescription
+        }
+        isUpdatingRecovery = false
+    }
+
+    public func recover(recoveryKey: String) async {
+        guard let client, !isUpdatingRecovery else { return }
+        isUpdatingRecovery = true
+        recoveryErrorMessage = nil
+        do {
+            try await client.recover(recoveryKey: recoveryKey)
+            recoveryState = await client.recoveryState()
+        } catch {
+            recoveryErrorMessage = error.localizedDescription
+        }
+        isUpdatingRecovery = false
+    }
+
+    public func dismissPendingRecoveryKey() {
+        pendingRecoveryKey = nil
     }
 
     /// Push the current displayName/avatarUrl into the memberProfiles cache
