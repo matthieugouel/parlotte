@@ -257,9 +257,8 @@ struct RoomDetailView: View {
 
     private var messageList: some View {
         MessageScrollView(
-            itemCount: appState.messages.count,
             lastItemId: appState.messages.last?.eventId,
-            isLoadingOlder: appState.isLoadingMoreMessages,
+            firstItemId: appState.messages.first?.eventId,
             onScrollToTop: {
                 if appState.hasMoreMessages && !appState.isLoadingMoreMessages {
                     Task { await appState.loadMoreMessages() }
