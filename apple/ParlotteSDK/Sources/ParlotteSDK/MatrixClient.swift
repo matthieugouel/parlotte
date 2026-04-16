@@ -291,4 +291,52 @@ public actor MatrixClient {
             try ffi.isLastDevice()
         }.value
     }
+
+    // MARK: - Verification
+
+    public nonisolated func setVerificationListener(_ listener: ParlotteVerificationListener) {
+        ffi.setVerificationListener(listener: listener)
+    }
+
+    public func requestSelfVerification() async throws -> VerificationRequestInfo {
+        let ffi = self.ffi
+        return try await Task.detached {
+            try ffi.requestSelfVerification()
+        }.value
+    }
+
+    public func acceptVerification() async throws {
+        let ffi = self.ffi
+        try await Task.detached { try ffi.acceptVerification() }.value
+    }
+
+    public func startSasVerification() async throws {
+        let ffi = self.ffi
+        try await Task.detached { try ffi.startSasVerification() }.value
+    }
+
+    public func confirmSasVerification() async throws {
+        let ffi = self.ffi
+        try await Task.detached { try ffi.confirmSasVerification() }.value
+    }
+
+    public func sasMismatch() async throws {
+        let ffi = self.ffi
+        try await Task.detached { try ffi.sasMismatch() }.value
+    }
+
+    public func cancelVerification() async throws {
+        let ffi = self.ffi
+        try await Task.detached { try ffi.cancelVerification() }.value
+    }
+
+    public func verificationState() async -> VerificationState? {
+        let ffi = self.ffi
+        return await Task.detached { ffi.verificationState() }.value
+    }
+
+    public func clearVerification() async {
+        let ffi = self.ffi
+        await Task.detached { ffi.clearVerification() }.value
+    }
 }

@@ -267,4 +267,72 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
         try errorFor(isLastDeviceError)
         return isLastDeviceResult
     }
+
+    // Verification
+    var verificationListener: ParlotteVerificationListener?
+    var requestSelfVerificationCalls = 0
+    var requestSelfVerificationError: Error?
+    var requestSelfVerificationResult = VerificationRequestInfo(
+        flowId: "$flow:example.com",
+        otherUserId: "@test:example.com",
+        isSelfVerification: true,
+        weStarted: true
+    )
+    var acceptVerificationCalls = 0
+    var acceptVerificationError: Error?
+    var startSasVerificationCalls = 0
+    var startSasVerificationError: Error?
+    var confirmSasVerificationCalls = 0
+    var confirmSasVerificationError: Error?
+    var sasMismatchCalls = 0
+    var sasMismatchError: Error?
+    var cancelVerificationCalls = 0
+    var cancelVerificationError: Error?
+    var verificationStateCalls = 0
+    var verificationStateResult: VerificationState?
+    var clearVerificationCalls = 0
+
+    func setVerificationListener(_ listener: ParlotteVerificationListener) {
+        verificationListener = listener
+    }
+
+    func requestSelfVerification() async throws -> VerificationRequestInfo {
+        requestSelfVerificationCalls += 1
+        try errorFor(requestSelfVerificationError)
+        return requestSelfVerificationResult
+    }
+
+    func acceptVerification() async throws {
+        acceptVerificationCalls += 1
+        try errorFor(acceptVerificationError)
+    }
+
+    func startSasVerification() async throws {
+        startSasVerificationCalls += 1
+        try errorFor(startSasVerificationError)
+    }
+
+    func confirmSasVerification() async throws {
+        confirmSasVerificationCalls += 1
+        try errorFor(confirmSasVerificationError)
+    }
+
+    func sasMismatch() async throws {
+        sasMismatchCalls += 1
+        try errorFor(sasMismatchError)
+    }
+
+    func cancelVerification() async throws {
+        cancelVerificationCalls += 1
+        try errorFor(cancelVerificationError)
+    }
+
+    func verificationState() async -> VerificationState? {
+        verificationStateCalls += 1
+        return verificationStateResult
+    }
+
+    func clearVerification() async {
+        clearVerificationCalls += 1
+    }
 }

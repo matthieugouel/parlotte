@@ -157,6 +157,11 @@ struct ProfileView: View {
 
             recoverySection
 
+            Divider()
+                .opacity(0.5)
+
+            verificationSection
+
             Spacer(minLength: Spacing.md)
 
             Button("Done") { dismiss() }
@@ -213,6 +218,37 @@ struct ProfileView: View {
             }
 
             if let error = appState.recoveryErrorMessage {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var verificationSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("Device Verification")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(AppColor.textTertiary)
+                .textCase(.uppercase)
+
+            Text("Verify this device against another signed-in device to confirm your identity across sessions.")
+                .font(.system(size: 11))
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button("Verify this Device") {
+                Task { await appState.requestSelfVerification() }
+            }
+            .disabled(appState.isProcessingVerification || appState.activeVerification != nil)
+
+            if appState.isProcessingVerification {
+                ProgressView().controlSize(.small)
+            }
+
+            if let error = appState.verificationErrorMessage {
                 Text(error)
                     .font(.system(size: 11))
                     .foregroundStyle(.red)

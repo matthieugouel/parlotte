@@ -44,6 +44,15 @@ public protocol MatrixClientProtocol: Sendable {
     func disableRecovery() async throws
     func recover(recoveryKey: String) async throws
     func isLastDevice() async throws -> Bool?
+    func setVerificationListener(_ listener: ParlotteVerificationListener)
+    func requestSelfVerification() async throws -> VerificationRequestInfo
+    func acceptVerification() async throws
+    func startSasVerification() async throws
+    func confirmSasVerification() async throws
+    func sasMismatch() async throws
+    func cancelVerification() async throws
+    func verificationState() async -> VerificationState?
+    func clearVerification() async
 }
 
 extension MatrixClient: MatrixClientProtocol {}

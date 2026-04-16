@@ -44,6 +44,17 @@ public final class AppState {
     /// Drives a confirmation dialog before the logout actually proceeds.
     public var isConfirmingLastDeviceLogout = false
 
+    // Device verification (cross-signing via SAS)
+    /// Metadata about the active verification (incoming or outgoing). Non-nil
+    /// means the verification modal should be shown.
+    public var activeVerification: VerificationRequestInfo?
+    /// Current state of the active verification, refreshed on each sync tick.
+    public var verificationStateValue: VerificationState?
+    /// Loading flag set while we're issuing a verification-related FFI call.
+    public var isProcessingVerification = false
+    /// Error from the last verification op (request/accept/confirm/etc).
+    public var verificationErrorMessage: String?
+
     /// UI appearance preference. Persisted per-profile in UserDefaults.
     public var appearance: AppearanceMode = .system {
         didSet {
@@ -289,6 +300,10 @@ public final class AppState {
         pendingRecoveryKey = nil
         recoveryErrorMessage = nil
         isPromptingRecoveryEntry = false
+        activeVerification = nil
+        verificationStateValue = nil
+        verificationErrorMessage = nil
+        isProcessingVerification = false
         pendingAttachments.removeAll()
         mediaCache.removeAllObjects()
         clearSavedSession()
@@ -957,6 +972,7 @@ public final class AppState {
     /// the member-profile cache so other users' display name/avatar changes are
     /// picked up without needing to switch rooms.
     public func handleSyncUpdate() async {
+        await refreshVerificationState()
         await refreshRooms()
         // Always check for new messages when a room is selected.
         // Own messages don't increment unreadCount, so we can't gate on it —
@@ -980,6 +996,8 @@ public final class AppState {
     private func startSyncLoop() {
         guard let client else { return }
         isSyncActive = true
+
+        client.setVerificationListener(VerificationRequestHandler(appState: self))
 
         let listener = SyncUpdateHandler(appState: self)
         do {
@@ -1056,6 +1074,105 @@ public final class AppState {
         d.removeObject(forKey: key("deviceId"))
         d.removeObject(forKey: key("accessToken"))
     }
+
+    // MARK: - Device verification
+
+    /// Called from the verification-listener bridge when an incoming
+    /// `m.key.verification.request` to-device event arrives.
+    public func handleIncomingVerificationRequest(_ info: VerificationRequestInfo) {
+        activeVerification = info
+        verificationErrorMessage = nil
+        Task { await refreshVerificationState() }
+    }
+
+    public func requestSelfVerification() async {
+        guard let client else { return }
+        isProcessingVerification = true
+        verificationErrorMessage = nil
+        do {
+            let info = try await client.requestSelfVerification()
+            activeVerification = info
+            await refreshVerificationState()
+        } catch {
+            verificationErrorMessage = error.displayMessage
+        }
+        isProcessingVerification = false
+    }
+
+    public func acceptVerification() async {
+        guard let client else { return }
+        isProcessingVerification = true
+        verificationErrorMessage = nil
+        do {
+            try await client.acceptVerification()
+            await refreshVerificationState()
+        } catch {
+            verificationErrorMessage = error.displayMessage
+        }
+        isProcessingVerification = false
+    }
+
+    public func startSasVerification() async {
+        guard let client else { return }
+        isProcessingVerification = true
+        verificationErrorMessage = nil
+        do {
+            try await client.startSasVerification()
+            await refreshVerificationState()
+        } catch {
+            verificationErrorMessage = error.displayMessage
+        }
+        isProcessingVerification = false
+    }
+
+    public func confirmSasVerification() async {
+        guard let client else { return }
+        isProcessingVerification = true
+        verificationErrorMessage = nil
+        do {
+            try await client.confirmSasVerification()
+            await refreshVerificationState()
+        } catch {
+            verificationErrorMessage = error.displayMessage
+        }
+        isProcessingVerification = false
+    }
+
+    public func sasMismatch() async {
+        guard let client else { return }
+        isProcessingVerification = true
+        verificationErrorMessage = nil
+        do {
+            try await client.sasMismatch()
+            await refreshVerificationState()
+        } catch {
+            verificationErrorMessage = error.displayMessage
+        }
+        isProcessingVerification = false
+    }
+
+    public func cancelVerification() async {
+        guard let client else { return }
+        verificationErrorMessage = nil
+        try? await client.cancelVerification()
+        await refreshVerificationState()
+    }
+
+    public func dismissVerification() async {
+        await client?.clearVerification()
+        activeVerification = nil
+        verificationStateValue = nil
+        verificationErrorMessage = nil
+    }
+
+    public func refreshVerificationState() async {
+        guard let client else { return }
+        let state = await client.verificationState()
+        verificationStateValue = state
+        if state == nil {
+            activeVerification = nil
+        }
+    }
 }
 
 /// Bridge from Rust sync callback to Swift MainActor.
@@ -1077,6 +1194,21 @@ private final class SyncUpdateHandler: ParlotteSyncListener, @unchecked Sendable
         Task { @MainActor [weak appState] in
             guard let appState else { return }
             appState.handleTypingUpdate(roomId: roomId, userIds: userIds)
+        }
+    }
+}
+
+/// Bridge from the verification event handler in Rust to the main actor.
+private final class VerificationRequestHandler: ParlotteVerificationListener, @unchecked Sendable {
+    private weak var appState: AppState?
+
+    init(appState: AppState) {
+        self.appState = appState
+    }
+
+    func onVerificationRequest(info: VerificationRequestInfo) {
+        Task { @MainActor [weak appState] in
+            appState?.handleIncomingVerificationRequest(info)
         }
     }
 }

@@ -119,5 +119,15 @@ struct MainView: View {
         } message: {
             Text("This is your only device. Without encrypted backup enabled, you'll permanently lose access to encrypted messages when you log out.")
         }
+        .sheet(isPresented: Binding(
+            get: { appState.activeVerification != nil },
+            set: { newValue in
+                if !newValue {
+                    Task { await appState.dismissVerification() }
+                }
+            }
+        )) {
+            VerificationSheet()
+        }
     }
 }

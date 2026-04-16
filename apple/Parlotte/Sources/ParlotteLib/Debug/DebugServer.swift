@@ -172,6 +172,24 @@ public final class DebugServer: @unchecked Sendable {
             return await cmdDisableRecovery()
         case "recover":
             return await cmdRecover(args: obj)
+        case "request_verification":
+            return await cmdRequestVerification()
+        case "accept_verification":
+            return await cmdAcceptVerification()
+        case "start_sas":
+            return await cmdStartSas()
+        case "confirm_sas":
+            return await cmdConfirmSas()
+        case "mismatch_sas":
+            return await cmdSasMismatch()
+        case "cancel_verification":
+            return await cmdCancelVerification()
+        case "dismiss_verification":
+            return await cmdDismissVerification()
+        case "refresh_verification":
+            return await cmdRefreshVerification()
+        case "login":
+            return await cmdLogin(args: obj)
         default:
             return (400, Self.errorBody("unknown op: \(op)"))
         }
@@ -259,6 +277,73 @@ public final class DebugServer: @unchecked Sendable {
         let (state, err) = await MainActor.run { (String(describing: appState.recoveryState), appState.errorMessage) }
         if let err { return (500, Self.errorBody(err)) }
         return okResponse(["recoveryState": state])
+    }
+
+    private func cmdLogin(args: [String: Any]) async -> (Int, Data) {
+        guard let homeserver = args["homeserver"] as? String,
+              let username = args["username"] as? String,
+              let password = args["password"] as? String else {
+            return (400, Self.errorBody("missing homeserver/username/password"))
+        }
+        await MainActor.run {
+            appState.homeserverURL = homeserver
+            appState.username = username
+            appState.password = password
+        }
+        await appState.login()
+        let (loggedIn, err) = await MainActor.run {
+            (appState.isLoggedIn, appState.errorMessage)
+        }
+        if let err, !loggedIn { return (500, Self.errorBody(err)) }
+        return okResponse(["isLoggedIn": loggedIn])
+    }
+
+    private func cmdRequestVerification() async -> (Int, Data) {
+        await appState.requestSelfVerification()
+        let err = await MainActor.run { appState.verificationErrorMessage }
+        if let err { return (500, Self.errorBody(err)) }
+        return okResponse([:])
+    }
+
+    private func cmdAcceptVerification() async -> (Int, Data) {
+        await appState.acceptVerification()
+        let err = await MainActor.run { appState.verificationErrorMessage }
+        if let err { return (500, Self.errorBody(err)) }
+        return okResponse([:])
+    }
+
+    private func cmdStartSas() async -> (Int, Data) {
+        await appState.startSasVerification()
+        let err = await MainActor.run { appState.verificationErrorMessage }
+        if let err { return (500, Self.errorBody(err)) }
+        return okResponse([:])
+    }
+
+    private func cmdConfirmSas() async -> (Int, Data) {
+        await appState.confirmSasVerification()
+        let err = await MainActor.run { appState.verificationErrorMessage }
+        if let err { return (500, Self.errorBody(err)) }
+        return okResponse([:])
+    }
+
+    private func cmdSasMismatch() async -> (Int, Data) {
+        await appState.sasMismatch()
+        return okResponse([:])
+    }
+
+    private func cmdCancelVerification() async -> (Int, Data) {
+        await appState.cancelVerification()
+        return okResponse([:])
+    }
+
+    private func cmdDismissVerification() async -> (Int, Data) {
+        await appState.dismissVerification()
+        return okResponse([:])
+    }
+
+    private func cmdRefreshVerification() async -> (Int, Data) {
+        await appState.refreshVerificationState()
+        return okResponse([:])
     }
 
     // MARK: - Helpers
@@ -429,10 +514,32 @@ struct DebugSnapshot: Encodable {
     let recoveryState: String
     let isUpdatingRecovery: Bool
     let pendingRecoveryKey: String?
+    let activeVerification: DebugVerificationRequest?
+    let verificationState: String?
+    let verificationEmojis: [DebugEmoji]?
+    let verificationError: String?
 
     @MainActor
     static func from(appState: AppState) -> DebugSnapshot {
-        DebugSnapshot(
+        let emojis: [DebugEmoji]?
+        let stateStr: String?
+        if let state = appState.verificationStateValue {
+            switch state {
+            case .pending: stateStr = "pending"; emojis = nil
+            case .ready: stateStr = "ready"; emojis = nil
+            case .sasStarted: stateStr = "sasStarted"; emojis = nil
+            case .sasReadyToCompare(let e):
+                stateStr = "sasReadyToCompare"
+                emojis = e.map { DebugEmoji(symbol: $0.symbol, description: $0.description) }
+            case .sasConfirmed: stateStr = "sasConfirmed"; emojis = nil
+            case .done: stateStr = "done"; emojis = nil
+            case .cancelled(let r): stateStr = "cancelled:\(r)"; emojis = nil
+            }
+        } else {
+            stateStr = nil; emojis = nil
+        }
+
+        return DebugSnapshot(
             profile: appState.profile,
             isLoggedIn: appState.isLoggedIn,
             isLoading: appState.isLoading,
@@ -450,9 +557,32 @@ struct DebugSnapshot: Encodable {
             currentRoomTypingUsers: appState.currentRoomTypingUsers,
             recoveryState: String(describing: appState.recoveryState),
             isUpdatingRecovery: appState.isUpdatingRecovery,
-            pendingRecoveryKey: appState.pendingRecoveryKey
+            pendingRecoveryKey: appState.pendingRecoveryKey,
+            activeVerification: appState.activeVerification.map {
+                DebugVerificationRequest(
+                    flowId: $0.flowId,
+                    otherUserId: $0.otherUserId,
+                    isSelfVerification: $0.isSelfVerification,
+                    weStarted: $0.weStarted
+                )
+            },
+            verificationState: stateStr,
+            verificationEmojis: emojis,
+            verificationError: appState.verificationErrorMessage
         )
     }
+}
+
+struct DebugVerificationRequest: Encodable {
+    let flowId: String
+    let otherUserId: String
+    let isSelfVerification: Bool
+    let weStarted: Bool
+}
+
+struct DebugEmoji: Encodable {
+    let symbol: String
+    let description: String
 }
 
 // MARK: - Shared encoder

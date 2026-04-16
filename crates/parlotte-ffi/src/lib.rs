@@ -16,13 +16,15 @@ pub fn init_logging(level: String) {
 }
 
 use parlotte_core::{
-    LoginMethods as CoreLoginMethods, MatrixSessionData as CoreMatrixSessionData,
-    MessageBatch as CoreMessageBatch, MessageInfo as CoreMessageInfo,
-    ParlotteClient as CoreClient, ParlotteError as CoreError,
+    EmojiInfo as CoreEmojiInfo, LoginMethods as CoreLoginMethods,
+    MatrixSessionData as CoreMatrixSessionData, MessageBatch as CoreMessageBatch,
+    MessageInfo as CoreMessageInfo, ParlotteClient as CoreClient, ParlotteError as CoreError,
     PublicRoomInfo as CorePublicRoomInfo, ReactionInfo as CoreReactionInfo,
     RecoveryState as CoreRecoveryState, RoomInfo as CoreRoomInfo,
     RoomMemberInfo as CoreRoomMemberInfo, SessionInfo as CoreSessionInfo,
     SsoProvider as CoreSsoProvider, UserProfile as CoreUserProfile,
+    VerificationRequestInfo as CoreVerificationRequestInfo,
+    VerificationState as CoreVerificationState,
 };
 use std::fmt;
 use std::sync::Arc;
@@ -313,7 +315,90 @@ impl From<CoreRecoveryState> for RecoveryState {
     }
 }
 
+// -- Verification types --
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct VerificationRequestInfo {
+    pub flow_id: String,
+    pub other_user_id: String,
+    pub is_self_verification: bool,
+    pub we_started: bool,
+}
+
+impl From<CoreVerificationRequestInfo> for VerificationRequestInfo {
+    fn from(i: CoreVerificationRequestInfo) -> Self {
+        Self {
+            flow_id: i.flow_id,
+            other_user_id: i.other_user_id,
+            is_self_verification: i.is_self_verification,
+            we_started: i.we_started,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct VerificationEmoji {
+    pub symbol: String,
+    pub description: String,
+}
+
+impl From<CoreEmojiInfo> for VerificationEmoji {
+    fn from(e: CoreEmojiInfo) -> Self {
+        Self { symbol: e.symbol, description: e.description }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Enum)]
+pub enum VerificationState {
+    Pending,
+    Ready,
+    SasStarted,
+    SasReadyToCompare { emojis: Vec<VerificationEmoji> },
+    SasConfirmed,
+    Done,
+    Cancelled { reason: String },
+}
+
+impl From<CoreVerificationState> for VerificationState {
+    fn from(s: CoreVerificationState) -> Self {
+        match s {
+            CoreVerificationState::Pending => VerificationState::Pending,
+            CoreVerificationState::Ready => VerificationState::Ready,
+            CoreVerificationState::SasStarted => VerificationState::SasStarted,
+            CoreVerificationState::SasReadyToCompare { emojis } => {
+                VerificationState::SasReadyToCompare {
+                    emojis: emojis.into_iter().map(Into::into).collect(),
+                }
+            }
+            CoreVerificationState::SasConfirmed => VerificationState::SasConfirmed,
+            CoreVerificationState::Done => VerificationState::Done,
+            CoreVerificationState::Cancelled { reason } => {
+                VerificationState::Cancelled { reason }
+            }
+        }
+    }
+}
+
 // -- Callback interfaces --
+
+/// Callback for incoming verification requests from another device.
+#[uniffi::export(callback_interface)]
+pub trait ParlotteVerificationListener: Send + Sync {
+    fn on_verification_request(&self, info: VerificationRequestInfo);
+}
+
+struct VerificationListenerBridge {
+    inner: Box<dyn ParlotteVerificationListener>,
+}
+
+unsafe impl Send for VerificationListenerBridge {}
+unsafe impl Sync for VerificationListenerBridge {}
+
+impl parlotte_core::VerificationListener for VerificationListenerBridge {
+    fn on_verification_request(&self, info: CoreVerificationRequestInfo) {
+        self.inner.on_verification_request(info.into());
+    }
+}
 
 /// Callback for persistent sync updates.
 /// Called after each successful sync response.
@@ -524,6 +609,45 @@ impl ParlotteClientFFI {
 
     pub fn is_last_device(&self) -> Result<Option<bool>, ParlotteError> {
         Ok(self.inner.is_last_device()?)
+    }
+
+    // -- Verification --
+
+    pub fn set_verification_listener(&self, listener: Box<dyn ParlotteVerificationListener>) {
+        self.inner
+            .set_verification_listener(Arc::new(VerificationListenerBridge { inner: listener }));
+    }
+
+    pub fn request_self_verification(&self) -> Result<VerificationRequestInfo, ParlotteError> {
+        Ok(self.inner.request_self_verification()?.into())
+    }
+
+    pub fn accept_verification(&self) -> Result<(), ParlotteError> {
+        Ok(self.inner.accept_verification()?)
+    }
+
+    pub fn start_sas_verification(&self) -> Result<(), ParlotteError> {
+        Ok(self.inner.start_sas_verification()?)
+    }
+
+    pub fn confirm_sas_verification(&self) -> Result<(), ParlotteError> {
+        Ok(self.inner.confirm_sas_verification()?)
+    }
+
+    pub fn sas_mismatch(&self) -> Result<(), ParlotteError> {
+        Ok(self.inner.sas_mismatch()?)
+    }
+
+    pub fn cancel_verification(&self) -> Result<(), ParlotteError> {
+        Ok(self.inner.cancel_verification()?)
+    }
+
+    pub fn verification_state(&self) -> Option<VerificationState> {
+        self.inner.verification_state().map(Into::into)
+    }
+
+    pub fn clear_verification(&self) {
+        self.inner.clear_verification();
     }
 }
 

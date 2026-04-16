@@ -12,6 +12,11 @@ use crate::message::{LoginMethods, MatrixSessionData, MessageBatch, MessageInfo,
 use crate::recovery::RecoveryState;
 use crate::room::{PublicRoomInfo, RoomInfo, RoomMemberInfo};
 use crate::sync::{SyncListener, SyncManager};
+use crate::verification::{
+    self, ActiveVerification, SharedActive, VerificationListener, VerificationRequestInfo,
+    VerificationState,
+};
+use matrix_sdk::encryption::verification::VerificationRequestState as SdkRequestState;
 
 /// The main Parlotte client wrapping the Matrix SDK.
 pub struct ParlotteClient {
@@ -19,6 +24,7 @@ pub struct ParlotteClient {
     inner: Option<Client>,
     runtime: tokio::runtime::Runtime,
     sync_manager: SyncManager,
+    active_verification: SharedActive,
 }
 
 impl ParlotteClient {
@@ -52,6 +58,7 @@ impl ParlotteClient {
             inner: Some(client),
             runtime,
             sync_manager: SyncManager::new(),
+            active_verification: Arc::new(tokio::sync::Mutex::new(ActiveVerification::default())),
         })
     }
 
@@ -1307,6 +1314,242 @@ impl ParlotteClient {
             }
             Ok(())
         })
+    }
+
+    // ---------- Device verification (cross-signing / SAS) ----------
+
+    /// Register a listener and event handler for incoming verification
+    /// requests. Must be called once after login/restore; safe to call again
+    /// to replace the listener.
+    pub fn set_verification_listener(&self, listener: Arc<dyn VerificationListener>) {
+        use matrix_sdk::ruma::events::key::verification::request::ToDeviceKeyVerificationRequestEvent;
+
+        let client = self.client().clone();
+        let active = self.active_verification.clone();
+        let listener_for_handler = listener.clone();
+
+        self.runtime.block_on(async move {
+            client.add_event_handler(
+                move |event: ToDeviceKeyVerificationRequestEvent, client: matrix_sdk::Client| {
+                    let listener = listener_for_handler.clone();
+                    let active = active.clone();
+                    async move {
+                        let flow_id = event.content.transaction_id.to_string();
+                        let sender = event.sender;
+                        let request = client
+                            .encryption()
+                            .get_verification_request(&sender, &flow_id)
+                            .await;
+                        if let Some(request) = request {
+                            let info = verification::request_info(&request);
+                            {
+                                let mut guard = active.lock().await;
+                                guard.request = Some(request);
+                                guard.sas = None;
+                            }
+                            listener.on_verification_request(info);
+                        } else {
+                            tracing::warn!(
+                                "received verification request event but get_verification_request returned None (flow_id={flow_id})"
+                            );
+                        }
+                    }
+                },
+            );
+        });
+    }
+
+    /// Start a self-verification flow: send a verification request to all our
+    /// other devices. Returns the `VerificationRequestInfo`.
+    pub fn request_self_verification(&self) -> Result<VerificationRequestInfo> {
+        let client = self.client();
+        let active = self.active_verification.clone();
+        self.runtime.block_on(async {
+            let user_id = client.user_id().ok_or_else(|| ParlotteError::Auth {
+                message: "not logged in".to_string(),
+            })?;
+
+            // On a fresh account cross-signing may not be bootstrapped yet.
+            // Try to bootstrap without auth data first — this works on servers
+            // that don't require UIAA for this endpoint (e.g. test instances,
+            // or a fresh session within its grace window).
+            client
+                .encryption()
+                .bootstrap_cross_signing_if_needed(None)
+                .await
+                .map_err(|e| ParlotteError::Unknown {
+                    message: format!(
+                        "could not bootstrap cross-signing: {e}. \
+                         Enable encrypted backup first to set up cross-signing \
+                         with your password."
+                    ),
+                })?;
+
+            let identity = client
+                .encryption()
+                .get_user_identity(user_id)
+                .await
+                .map_err(|e| ParlotteError::Unknown {
+                    message: format!("failed to fetch user identity: {e}"),
+                })?
+                .ok_or_else(|| ParlotteError::Unknown {
+                    message: "own user identity unavailable after bootstrap".to_string(),
+                })?;
+            let request = identity.request_verification().await.map_err(|e| {
+                ParlotteError::Unknown {
+                    message: format!("failed to request verification: {e}"),
+                }
+            })?;
+            let info = verification::request_info(&request);
+            let mut guard = active.lock().await;
+            guard.request = Some(request);
+            guard.sas = None;
+            Ok(info)
+        })
+    }
+
+    /// Accept an incoming verification request (receiver side).
+    pub fn accept_verification(&self) -> Result<()> {
+        let active = self.active_verification.clone();
+        self.runtime.block_on(async {
+            let guard = active.lock().await;
+            let request = guard.request.as_ref().ok_or_else(|| ParlotteError::Unknown {
+                message: "no active verification to accept".to_string(),
+            })?;
+            request.accept().await.map_err(|e| ParlotteError::Unknown {
+                message: format!("failed to accept verification: {e}"),
+            })
+        })
+    }
+
+    /// Transition the active verification into a SAS (emoji) flow.
+    pub fn start_sas_verification(&self) -> Result<()> {
+        let active = self.active_verification.clone();
+        self.runtime.block_on(async {
+            let sas_opt = {
+                let guard = active.lock().await;
+                let request = guard.request.as_ref().ok_or_else(|| ParlotteError::Unknown {
+                    message: "no active verification".to_string(),
+                })?;
+                request.start_sas().await.map_err(|e| ParlotteError::Unknown {
+                    message: format!("failed to start SAS: {e}"),
+                })?
+            };
+            let mut guard = active.lock().await;
+            guard.sas = sas_opt;
+            Ok(())
+        })
+    }
+
+    /// Confirm the SAS emojis matched. Completes the verification on our side.
+    pub fn confirm_sas_verification(&self) -> Result<()> {
+        let active = self.active_verification.clone();
+        self.runtime.block_on(async {
+            let guard = active.lock().await;
+            let sas = guard.sas.as_ref().ok_or_else(|| ParlotteError::Unknown {
+                message: "no SAS verification in progress".to_string(),
+            })?;
+            sas.confirm().await.map_err(|e| ParlotteError::Unknown {
+                message: format!("failed to confirm SAS: {e}"),
+            })
+        })
+    }
+
+    /// Signal that the emojis did not match; cancels the verification.
+    pub fn sas_mismatch(&self) -> Result<()> {
+        let active = self.active_verification.clone();
+        self.runtime.block_on(async {
+            let guard = active.lock().await;
+            let sas = guard.sas.as_ref().ok_or_else(|| ParlotteError::Unknown {
+                message: "no SAS verification in progress".to_string(),
+            })?;
+            sas.mismatch().await.map_err(|e| ParlotteError::Unknown {
+                message: format!("failed to signal mismatch: {e}"),
+            })
+        })
+    }
+
+    /// Cancel the active verification request (or SAS if one was started).
+    pub fn cancel_verification(&self) -> Result<()> {
+        let active = self.active_verification.clone();
+        self.runtime.block_on(async {
+            let guard = active.lock().await;
+            if let Some(sas) = guard.sas.as_ref() {
+                sas.cancel().await.map_err(|e| ParlotteError::Unknown {
+                    message: format!("failed to cancel SAS: {e}"),
+                })?;
+            } else if let Some(request) = guard.request.as_ref() {
+                request.cancel().await.map_err(|e| ParlotteError::Unknown {
+                    message: format!("failed to cancel verification: {e}"),
+                })?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Refresh the active verification's SAS handle from the request's
+    /// transitioned state (call after each sync tick to surface emoji state).
+    /// If the SAS was started by the other side (receiver flow), auto-accept
+    /// it so the key-exchange can proceed.
+    fn refresh_sas_from_request(&self) {
+        let active = self.active_verification.clone();
+        self.runtime.block_on(async {
+            let sas_to_accept = {
+                let mut guard = active.lock().await;
+                if guard.sas.is_some() {
+                    None
+                } else if let Some(request) = guard.request.as_ref() {
+                    if let SdkRequestState::Transitioned { verification } = request.state() {
+                        if let Some(sas) = verification.sas() {
+                            guard.sas = Some(sas.clone());
+                            if !sas.we_started() {
+                                Some(sas)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            };
+
+            if let Some(sas) = sas_to_accept {
+                if let Err(e) = sas.accept().await {
+                    tracing::warn!("failed to auto-accept SAS on receiver: {e}");
+                }
+            }
+        });
+    }
+
+    /// Get the current state of the active verification, or `None` if there
+    /// isn't one.
+    pub fn verification_state(&self) -> Option<VerificationState> {
+        // Opportunistically pick up a SAS that was created by the other side.
+        self.refresh_sas_from_request();
+        let active = self.active_verification.clone();
+        self.runtime.block_on(async {
+            let guard = active.lock().await;
+            if guard.request.is_none() {
+                return None;
+            }
+            verification::derive_state(&guard).ok()
+        })
+    }
+
+    /// Clear the active verification (after completion / cancellation /
+    /// dismissal from the UI).
+    pub fn clear_verification(&self) {
+        let active = self.active_verification.clone();
+        self.runtime.block_on(async {
+            let mut guard = active.lock().await;
+            guard.request = None;
+            guard.sas = None;
+        });
     }
 }
 

@@ -59,7 +59,14 @@ work that doesn't belong in any other category.
 ## Security
 - [x] Legacy SSO login (browser-based, works with most Synapse servers)
 - [ ] Native OIDC login (MAS / OpenID Connect)
-- [ ] **[v1]** Device verification (cross-signing)
+- [x] Device verification (cross-signing)
+  - [x] Self-verification via SAS emoji (initiator + receiver flows)
+  - [x] Core + FFI: request, accept, start SAS, confirm/mismatch, cancel
+  - [x] Incoming verification request listener wired through sync
+  - [x] Modal UI for emoji comparison (both ends)
+  - [ ] QR code verification
+  - [ ] Cross-user verification from member list
+  - [ ] Per-device trust badges in member list
 - [x] Key backup and recovery (reinstall must not lose encrypted history)
   - [x] Core + FFI: enable/disable/recover + `RecoveryState`
   - [x] Settings UI: status, enable, recovery-key display, key entry
