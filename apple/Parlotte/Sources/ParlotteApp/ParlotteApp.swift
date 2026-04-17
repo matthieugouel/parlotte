@@ -8,6 +8,8 @@ struct ParlotteApp: App {
     @State private var appState: AppState
     /// Retained so the listener stays alive for the lifetime of the app.
     private static var debugServer: DebugServer?
+    /// Retained so the UNUserNotificationCenter delegate isn't released mid-flight.
+    private static var notificationDispatcher: LocalNotificationDispatcher?
 
     init() {
         let profile = Self.parseProfile()
@@ -16,6 +18,15 @@ struct ParlotteApp: App {
         }
         let state = AppState(profile: profile)
         _appState = State(initialValue: state)
+
+        let dispatcher = LocalNotificationDispatcher()
+        dispatcher.install()
+        dispatcher.onTap = { [weak state] roomId in
+            state?.openRoom(roomId)
+        }
+        state.notificationDispatcher = dispatcher
+        Self.notificationDispatcher = dispatcher
+        Task { _ = await dispatcher.requestAuthorization() }
 
         if let port = Self.parseDebugIpcPort() {
             let server = DebugServer(appState: state)

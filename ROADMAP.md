@@ -1,9 +1,5 @@
 # Parlotte Roadmap (macOS app)
 
-Items tagged **[v1]** are targeted for the first App Store release. See the
-[Release](#release-app-store-v1) section for branding and store-submission
-work that doesn't belong in any other category.
-
 ## Core
 - [x] Login / logout with session persistence
 - [x] Apple build pipeline (Rust -> XCFramework -> Swift bindings)
@@ -11,7 +7,8 @@ work that doesn't belong in any other category.
 - [x] Multi-profile support (`--profile` flag for testing)
 - [x] Debug logging (`--debug` flag)
 - [x] Background sync (persistent connection instead of 5s polling)
-- [ ] **[v1]** Push notifications (APNs entitlement, Sygnal/pusher config, tap-to-open-room)
+- [x] Local notifications (banners for new messages in non-focused rooms, tap-to-open, profile toggle)
+- [ ] Remote push (APNs + Sygnal push gateway, pusher registration, NSE for E2EE decryption) — deferred to the iOS port
 - [ ] Sliding Sync (performance at scale)
 
 ## Rooms
@@ -82,25 +79,21 @@ work that doesn't belong in any other category.
 - [x] Debug IPC server (`--debug-ipc-port`) for AI-driven UI testing
 - [x] DebugServer test suite (state snapshots, command dispatch, error paths)
 - [x] `ax-inspect` accessibility driver (real keystroke typing, button clicks, field input, wait-for)
-- [ ] CI pipeline (GitHub Actions: build, test, clippy, fmt)
+- [x] Crash reporting: rely on Xcode Organizer (automatic once distributed via TestFlight / App Store; no in-app code needed)
 - [ ] Persistent sync loop integration test (start sync, receive callback, stop)
-- [ ] **[v1]** Crash reporting (Sentry or MetricKit) for post-launch triage
+- [ ] CI pipeline (GitHub Actions: build, test, clippy, fmt)
 
-## Release (App Store v1)
-
-Feature work tagged **[v1]** lives in the sections above. This section covers
-only branding and store-submission artifacts.
-
-### Branding
+## Branding
 - [ ] App icon (1024×1024 master + full macOS icon set)
 - [ ] App name and bundle identifier finalized
 - [ ] Launch screen / first-run experience
 - [ ] Marketing screenshots for the App Store listing
 - [ ] App Store description, keywords, category, support URL
 
-### Submission
-- [ ] Privacy manifest (`PrivacyInfo.xcprivacy`) declaring data collection and required-reason APIs
+## Submission
+- [x] Privacy manifest (`PrivacyInfo.xcprivacy`) declaring data collection and required-reason APIs
 - [ ] Privacy policy + terms of service URLs
-- [ ] Mac App Store distribution profile and code signing
-- [ ] Notarization and hardened runtime
-- [ ] Sandbox entitlements audit (network, keychain, user-selected files)
+- [x] Mac App Store distribution profile and code signing (automatic signing via `scripts/archive.sh`)
+- [x] Notarization and hardened runtime (hardened runtime enabled; notarization handled server-side on App Store submission)
+- [x] Sandbox entitlements audit (network client/server + user-selected files, see `Resources/Parlotte.entitlements`)
+- [ ] First TestFlight build uploaded and verified by internal testers

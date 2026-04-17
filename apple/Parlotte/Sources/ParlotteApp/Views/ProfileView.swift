@@ -147,6 +147,20 @@ struct ProfileView: View {
                 .labelsHidden()
             }
 
+            // Notifications
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text("Notifications")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AppColor.textTertiary)
+                    .textCase(.uppercase)
+
+                Toggle("Show banners for new messages", isOn: Binding(
+                    get: { appState.notificationsEnabled },
+                    set: { appState.notificationsEnabled = $0 }
+                ))
+                .font(.messageBody)
+            }
+
             if appState.isUpdatingProfile {
                 ProgressView()
                     .controlSize(.small)

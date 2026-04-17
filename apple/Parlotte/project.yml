@@ -1,0 +1,92 @@
+name: Parlotte
+
+options:
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "15.0"
+  defaultConfig: Debug
+
+configs:
+  Debug: debug
+  Release: release
+
+# DEVELOPMENT_TEAM comes from Config.xcconfig (gitignored). Copy
+# Config.xcconfig.example to Config.xcconfig and fill in your Team ID.
+configFiles:
+  Debug: Config.xcconfig
+  Release: Config.xcconfig
+
+packages:
+  ParlotteSDK:
+    path: ../ParlotteSDK
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: YES
+
+targets:
+  ParlotteLib:
+    type: framework
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Sources/ParlotteLib
+    dependencies:
+      - package: ParlotteSDK
+        product: ParlotteSDK
+    info:
+      path: Resources/ParlotteLib-Info.plist
+      properties:
+        CFBundleName: ParlotteLib
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundlePackageType: FMWK
+        NSHumanReadableCopyright: ""
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.nxthdr.Parlotte.ParlotteLib
+        DEFINES_MODULE: YES
+        SKIP_INSTALL: YES
+
+  Parlotte:
+    type: application
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Sources/ParlotteApp
+    resources:
+      - path: Resources/PrivacyInfo.xcprivacy
+    dependencies:
+      - target: ParlotteLib
+        embed: true
+      - package: ParlotteSDK
+        product: ParlotteSDK
+    info:
+      path: Resources/Info.plist
+      properties:
+        CFBundleName: Parlotte
+        CFBundleDisplayName: Parlotte
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundlePackageType: APPL
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSHighResolutionCapable: true
+        # Allow loopback / .local HTTP so developers can run against a local
+        # Synapse without disabling ATS globally. Remote homeservers are
+        # expected to use HTTPS.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.nxthdr.Parlotte
+        PRODUCT_NAME: Parlotte
+        CODE_SIGN_ENTITLEMENTS: Resources/Parlotte.entitlements
+        ENABLE_USER_SCRIPT_SANDBOXING: NO

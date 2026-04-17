@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Required for Mac App Store distribution. -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <!-- Outbound network for Matrix API calls. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <!-- Inbound loopback listener for the SSO OAuth callback. -->
+    <key>com.apple.security.network.server</key>
+    <true/>
+    <!-- Attachment picker. Read-only is enough for uploads; we don't save
+         received files to arbitrary user paths yet. -->
+    <key>com.apple.security.files.user-selected.read-only</key>
+    <true/>
+</dict>
+</plist>

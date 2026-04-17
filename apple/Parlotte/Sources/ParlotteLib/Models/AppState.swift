@@ -63,6 +63,27 @@ public final class AppState {
         }
     }
 
+    /// Whether to post OS notifications for new messages in non-focused rooms.
+    /// Persisted per-profile. Defaults to `true`.
+    public var notificationsEnabled: Bool = true {
+        didSet {
+            guard notificationsEnabled != oldValue else { return }
+            Self.defaults.set(notificationsEnabled, forKey: key("notificationsEnabled"))
+        }
+    }
+
+    /// Dispatcher for OS notifications. Injected by the app at launch; tests
+    /// use a mock to observe which notifications would fire. Nil means no-op.
+    public var notificationDispatcher: NotificationDispatcher?
+
+    /// Returns true when the app has keyboard focus. Overridden in tests where
+    /// `NSApplication.shared.isActive` is unreliable.
+    public var isAppActiveProvider: () -> Bool = { NSApplication.shared.isActive }
+
+    /// Prior `unreadCount` per room, captured after the previous `refreshRooms`.
+    /// Used to compute deltas and suppress the initial-sync flood.
+    private var previousUnreadCounts: [String: UInt64] = [:]
+
     public var rooms: [RoomInfo] = []
     public var selectedRoomId: String? {
         didSet {
@@ -129,6 +150,9 @@ public final class AppState {
         if let raw = Self.defaults.string(forKey: "parlotte.\(profile).appearance"),
            let mode = AppearanceMode(rawValue: raw) {
             self.appearance = mode
+        }
+        if let enabled = Self.defaults.object(forKey: "parlotte.\(profile).notificationsEnabled") as? Bool {
+            self.notificationsEnabled = enabled
         }
     }
 
@@ -306,6 +330,7 @@ public final class AppState {
         isProcessingVerification = false
         pendingAttachments.removeAll()
         mediaCache.removeAllObjects()
+        previousUnreadCounts = [:]
         clearSavedSession()
         clearStore()
     }
@@ -324,7 +349,9 @@ public final class AppState {
         guard let client else { return false }
         do {
             var updated = try await client.rooms()
-            // Check if the selected room has new messages before zeroing
+
+            let candidates = notificationCandidates(in: updated)
+
             var hasNewMessages = false
             if let selected = selectedRoomId,
                let idx = updated.firstIndex(where: { $0.id == selected }) {
@@ -332,11 +359,81 @@ public final class AppState {
                 updated[idx].unreadCount = 0
             }
             rooms = updated
+            previousUnreadCounts = Dictionary(
+                uniqueKeysWithValues: updated.map { ($0.id, $0.unreadCount) }
+            )
+
+            await dispatchNotifications(for: candidates)
+
             return hasNewMessages
         } catch {
             errorMessage = error.displayMessage
             return false
         }
+    }
+
+    /// Rooms with an `unreadCount` strictly greater than the value captured
+    /// on the previous refresh. Rooms without a prior value (the first sync
+    /// or a freshly joined room) are skipped to avoid spamming the user with
+    /// historical counts. The currently-selected room is also skipped while
+    /// the app has focus, since the user is actively reading it.
+    private func notificationCandidates(in updated: [RoomInfo]) -> [(roomId: String, roomName: String)] {
+        guard notificationsEnabled, notificationDispatcher != nil else { return [] }
+        let appIsActive = isAppActiveProvider()
+        var result: [(roomId: String, roomName: String)] = []
+        for room in updated where !room.isInvited {
+            guard let prev = previousUnreadCounts[room.id] else { continue }
+            guard room.unreadCount > prev else { continue }
+            if room.id == selectedRoomId && appIsActive { continue }
+            result.append((room.id, room.displayName))
+        }
+        return result
+    }
+
+    /// Fetch the latest message for each candidate room and post a notification.
+    /// Previews fall back to "New message" when we can't retrieve the content
+    /// (e.g., undecryptable events or transient fetch failures).
+    private func dispatchNotifications(for candidates: [(roomId: String, roomName: String)]) async {
+        guard let dispatcher = notificationDispatcher, !candidates.isEmpty else { return }
+        guard let client else { return }
+        for candidate in candidates {
+            var body = "New message"
+            if let batch = try? await client.messages(roomId: candidate.roomId, limit: 1, from: nil),
+               let latest = batch.messages.last {
+                let sender = shortSenderName(latest.sender)
+                let preview = previewText(latest.body)
+                body = "\(sender): \(preview)"
+            }
+            dispatcher.postMessageNotification(
+                roomId: candidate.roomId,
+                title: candidate.roomName,
+                body: body
+            )
+        }
+    }
+
+    /// Shortens a Matrix user ID (`@alice:example.com`) to just the localpart
+    /// (`alice`). Used as a fallback display name for senders in rooms whose
+    /// member profiles haven't been loaded into memory.
+    private func shortSenderName(_ userId: String) -> String {
+        if userId.hasPrefix("@"), let colon = userId.firstIndex(of: ":") {
+            return String(userId[userId.index(after: userId.startIndex)..<colon])
+        }
+        return userId
+    }
+
+    private func previewText(_ body: String) -> String {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let maxLen = 120
+        if trimmed.count <= maxLen { return trimmed }
+        return String(trimmed.prefix(maxLen)) + "…"
+    }
+
+    /// Programmatic entry point for the notification-tap handler. Switches to
+    /// the given room if it exists in the current joined-rooms list.
+    public func openRoom(_ roomId: String) {
+        guard rooms.contains(where: { $0.id == roomId }) else { return }
+        selectedRoomId = roomId
     }
 
     public func refreshMessages() async {

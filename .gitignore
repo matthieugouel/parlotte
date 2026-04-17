@@ -11,6 +11,7 @@ xcuserdata/
 
 # Xcode
 apple/Parlotte/build/
+apple/Parlotte/Parlotte.xcodeproj/
 *.pbxuser
 *.mode1v3
 *.mode2v3
@@ -39,6 +40,9 @@ apple/ParlotteSDK/Sources/ParlotteFFIHeaders/
 
 # Swift Package Manager
 apple/**/.build/
+
+# Local signing config (contains DEVELOPMENT_TEAM)
+apple/Parlotte/Config.xcconfig
 
 # Compiled skill tools
 .claude/skills/ax-inspect
