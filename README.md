@@ -14,7 +14,7 @@ In active development. First TestFlight build is being prepared. iOS next.
 
 ## Links
 
-- [Landing](https://matthieugouel.github.io/parlotte/) · [Privacy](https://matthieugouel.github.io/parlotte/privacy/) · [Support](https://matthieugouel.github.io/parlotte/support/)
+- [Landing](https://nxthdr.github.io/parlotte/) · [Privacy](https://nxthdr.github.io/parlotte/privacy/) · [Support](https://nxthdr.github.io/parlotte/support/)
 - [Roadmap](ROADMAP.md) · [Architecture notes](CLAUDE.md)
 
 ## Building

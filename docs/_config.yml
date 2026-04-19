@@ -1,7 +1,7 @@
 title: Parlotte
 description: Fast, private, native Matrix messaging for macOS
 baseurl: "/parlotte"
-url: "https://matthieugouel.github.io"
+url: "https://nxthdr.github.io"
 theme: minima
 minima:
   skin: auto

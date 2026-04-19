@@ -18,7 +18,7 @@ Parlotte is a Matrix client built from the ground up in SwiftUI — no Electron,
 
 - [Privacy policy](/parlotte/privacy/)
 - [Support & FAQ](/parlotte/support/)
-- [Source on GitHub](https://github.com/matthieugouel/parlotte)
+- [Source on GitHub](https://github.com/nxthdr/parlotte)
 
 ## Get Parlotte
 

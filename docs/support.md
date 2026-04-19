@@ -6,7 +6,7 @@ permalink: /support/
 
 ## Getting help
 
-- **Bugs and feature requests**: [github.com/matthieugouel/parlotte/issues](https://github.com/matthieugouel/parlotte/issues)
+- **Bugs and feature requests**: [github.com/nxthdr/parlotte/issues](https://github.com/nxthdr/parlotte/issues)
 - **Security concerns**: email the maintainer listed on the GitHub repo. Please do not open public issues for security vulnerabilities.
 
 ## Frequently asked questions
@@ -41,7 +41,7 @@ macOS 15 (Sequoia) or later.
 
 ### Is Parlotte open source?
 
-Yes. Source code is available at [github.com/matthieugouel/parlotte](https://github.com/matthieugouel/parlotte), licensed under MIT.
+Yes. Source code is available at [github.com/nxthdr/parlotte](https://github.com/nxthdr/parlotte), licensed under MIT.
 
 ### Is there an iOS version?
 

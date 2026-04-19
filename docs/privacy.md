@@ -48,4 +48,4 @@ Private rooms in Parlotte are end-to-end encrypted using the Matrix Megolm proto
 
 ## Contact
 
-Questions about this policy: file an issue at [github.com/matthieugouel/parlotte](https://github.com/matthieugouel/parlotte/issues) or email the maintainer listed there.
+Questions about this policy: file an issue at [github.com/nxthdr/parlotte](https://github.com/nxthdr/parlotte/issues) or email the maintainer listed there.

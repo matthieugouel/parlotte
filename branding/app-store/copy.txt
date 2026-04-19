@@ -77,9 +77,9 @@ Secondary: Productivity
 --------------------------------------------------------------------------------
 SUPPORT / MARKETING URLS (pages drafted; need Pages enabled in repo settings)
 --------------------------------------------------------------------------------
-Support URL:        https://matthieugouel.github.io/parlotte/support/
-Marketing URL:      https://matthieugouel.github.io/parlotte/
-Privacy Policy URL: https://matthieugouel.github.io/parlotte/privacy/
+Support URL:        https://nxthdr.github.io/parlotte/support/
+Marketing URL:      https://nxthdr.github.io/parlotte/
+Privacy Policy URL: https://nxthdr.github.io/parlotte/privacy/
 
 Source: docs/ in this repo. To publish:
   GitHub → Settings → Pages → Source = "Deploy from a branch",

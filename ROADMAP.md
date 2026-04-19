@@ -89,11 +89,11 @@
 - [ ] Launch screen / first-run experience
 - [ ] Marketing screenshots for the App Store listing
 - [x] App Store description, keywords, category (first-pass copy at `branding/app-store/copy.txt`)
-- [x] Support + marketing + privacy-policy URLs hosted and live at `matthieugouel.github.io/parlotte/` (Jekyll pages at `docs/`)
+- [x] Support + marketing + privacy-policy URLs hosted and live at `nxthdr.github.io/parlotte/` (Jekyll pages at `docs/`)
 
 ## Submission
 - [x] Privacy manifest (`PrivacyInfo.xcprivacy`) declaring data collection and required-reason APIs
-- [x] Privacy policy URL live (`matthieugouel.github.io/parlotte/privacy/`)
+- [x] Privacy policy URL live (`nxthdr.github.io/parlotte/privacy/`)
 - [x] Mac App Store distribution profile and code signing (automatic signing via `scripts/archive.sh`)
 - [x] Notarization and hardened runtime (hardened runtime enabled; notarization handled server-side on App Store submission)
 - [x] Sandbox entitlements audit (network client/server + user-selected files, see `Resources/Parlotte.entitlements`)
