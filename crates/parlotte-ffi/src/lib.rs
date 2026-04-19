@@ -1,3 +1,5 @@
+#![recursion_limit = "512"]
+
 uniffi::setup_scaffolding!();
 
 /// Initialize logging with the given level filter (e.g. "debug", "info", "warn").
