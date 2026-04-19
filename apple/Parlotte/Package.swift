@@ -41,6 +41,9 @@ let package = Package(
                 .product(name: "ParlotteSDK", package: "ParlotteSDK"),
             ],
             path: "Sources/ParlotteApp",
+            resources: [
+                .process("Resources"),
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v5),
             ]

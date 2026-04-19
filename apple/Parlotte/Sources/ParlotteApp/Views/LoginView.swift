@@ -1,3 +1,4 @@
+import AppKit
 import ParlotteLib
 import SwiftUI
 
@@ -11,9 +12,13 @@ struct LoginView: View {
         @Bindable var appState = appState
 
         VStack(spacing: 24) {
-            Image(systemName: "bubble.left.and.text.bubble.right")
-                .font(.system(size: 48))
-                .foregroundStyle(.tint)
+            if let iconURL = Bundle.module.url(forResource: "parlotte-icon", withExtension: "svg"),
+               let iconImage = NSImage(contentsOf: iconURL) {
+                Image(nsImage: iconImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 96, height: 96)
+            }
 
             Text("Parlotte")
                 .font(.largeTitle)
