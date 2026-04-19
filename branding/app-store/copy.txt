@@ -1,0 +1,106 @@
+================================================================================
+App Store Connect — Parlotte listing copy (first pass)
+================================================================================
+
+Char limits shown per field. Paste each block into the matching field in
+App Store Connect → Parlotte → macOS App → Version → App Store Information.
+
+--------------------------------------------------------------------------------
+NAME (max 30 chars)
+--------------------------------------------------------------------------------
+Parlotte
+
+--------------------------------------------------------------------------------
+SUBTITLE (max 30 chars)
+--------------------------------------------------------------------------------
+Fast, native Matrix client
+
+--------------------------------------------------------------------------------
+PROMOTIONAL TEXT (max 170 chars — editable anytime, no review needed)
+--------------------------------------------------------------------------------
+A fast, native Matrix client for macOS. End-to-end encrypted by default. Designed for people who love great software.
+
+--------------------------------------------------------------------------------
+DESCRIPTION (max 4000 chars)
+--------------------------------------------------------------------------------
+Parlotte is a fast, privacy-first Matrix messaging client, built natively for macOS.
+
+The Matrix network is open, federated, and end-to-end encrypted. You choose which server to trust, and your conversations stay between you and the people you're talking to. Parlotte makes that experience feel as polished as the proprietary messaging apps you're used to — without the tracking, lock-in, or compromises.
+
+WHY PARLOTTE
+• Truly native. SwiftUI from the ground up, no Electron, no wrapped web view.
+• Fast. Persistent sync keeps your messages live without polling.
+• Private by default. End-to-end encryption for every private room, with cross-signing and device verification.
+• Resilient. Key backup and recovery mean reinstalling never costs you your encrypted history.
+• Focused. Local notifications that respect your attention — banners only for rooms you're not looking at.
+• Flexible. Multiple profiles for separating personal and work accounts.
+• Polished. Light and dark themes that match your system appearance.
+
+FEATURES
+• Rich text messages with reactions, replies, edits, deletes, and typing indicators.
+• Image, file, video, audio, and location messages.
+• Public room directory and invite handling.
+• Room settings: name, topic, encryption indicator, member list.
+• Self-verification via SAS emoji comparison.
+• Recovery-key backup and device cross-signing.
+• Unread indicators and read receipts.
+• Infinite message history pagination.
+
+PRIVACY
+Parlotte collects nothing. Your messages and credentials stay on your device and on the homeserver you pick. No telemetry. No trackers. No ads.
+
+YOU NEED A MATRIX ACCOUNT
+Sign up on matrix.org, or use any public or self-hosted homeserver running Synapse or a compatible Matrix server. Parlotte works with any standard Matrix homeserver.
+
+REQUIREMENTS
+macOS 15 (Sequoia) or later.
+
+--------------------------------------------------------------------------------
+KEYWORDS (max 100 chars, comma-separated, no spaces after commas)
+--------------------------------------------------------------------------------
+matrix,chat,messaging,encrypted,private,e2ee,synapse,secure,decentralized,federated,open
+
+(92 chars. Note: Apple typically rejects listings that name competitor apps,
+so "element" is intentionally excluded.)
+
+--------------------------------------------------------------------------------
+WHAT'S NEW (for version 0.1.0 — first public release)
+--------------------------------------------------------------------------------
+First public release of Parlotte. Core messaging, end-to-end encryption, cross-signing device verification, key backup and recovery, and local notifications — all working. We'd love your feedback on what to build next.
+
+--------------------------------------------------------------------------------
+CATEGORY
+--------------------------------------------------------------------------------
+Primary:   Social Networking
+Secondary: Productivity
+
+--------------------------------------------------------------------------------
+SUPPORT / MARKETING URLS (pages drafted; need Pages enabled in repo settings)
+--------------------------------------------------------------------------------
+Support URL:        https://matthieugouel.github.io/parlotte/support/
+Marketing URL:      https://matthieugouel.github.io/parlotte/
+Privacy Policy URL: https://matthieugouel.github.io/parlotte/privacy/
+
+Source: docs/ in this repo. To publish:
+  GitHub → Settings → Pages → Source = "Deploy from a branch",
+                               Branch = main, Folder = /docs.
+  First build takes ~1 min.
+
+--------------------------------------------------------------------------------
+AGE RATING
+--------------------------------------------------------------------------------
+Unrestricted web access: NO (app only connects to the homeserver you configure)
+User-generated content:  YES — messaging with other users
+  → Likely rating: 17+ (the standard for any user-messaging app per Apple's
+    rubric; Signal, WhatsApp, Telegram all ship at 17+.)
+
+--------------------------------------------------------------------------------
+EXPORT COMPLIANCE
+--------------------------------------------------------------------------------
+Uses encryption: YES (end-to-end E2EE via Olm/Megolm)
+Qualifies for ITSAppUsesNonExemptEncryption=false exemption? NO — we use
+proprietary-style E2EE, not just HTTPS. Must file an annual self-classification
+with BIS (free, online). Most open-source crypto qualifies under ENC/741.17(b)(3).
+
+Action: add `ITSAppUsesNonExemptEncryption = YES` to Info.plist and submit
+the self-classification report at https://www.bis.doc.gov/ once live.
