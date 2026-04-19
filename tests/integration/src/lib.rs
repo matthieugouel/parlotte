@@ -66,8 +66,8 @@ mod tests {
         drop(rt);
 
         // Now create a ParlotteClient and login
-        let client = ParlotteClient::new(HOMESERVER_URL, None)
-            .expect("failed to create parlotte client");
+        let client =
+            ParlotteClient::new(HOMESERVER_URL, None).expect("failed to create parlotte client");
         let session = client
             .login(&username, password)
             .expect("login failed after registration");
@@ -174,7 +174,10 @@ mod tests {
         let bob_rooms = bob.rooms().unwrap();
         let invited = bob_rooms.iter().find(|r| r.id == room_id);
         assert!(invited.is_some(), "Bob should see the invited room");
-        assert!(invited.unwrap().is_invited, "Room should be marked as invited");
+        assert!(
+            invited.unwrap().is_invited,
+            "Room should be marked as invited"
+        );
 
         bob.join_room(&room_id).unwrap();
 
@@ -185,8 +188,14 @@ mod tests {
         // After joining, room should no longer be marked as invited
         let bob_rooms = bob.rooms().unwrap();
         let joined = bob_rooms.iter().find(|r| r.id == room_id);
-        assert!(joined.is_some(), "Bob should still see the room after joining");
-        assert!(!joined.unwrap().is_invited, "Room should not be marked as invited after joining");
+        assert!(
+            joined.is_some(),
+            "Bob should still see the room after joining"
+        );
+        assert!(
+            !joined.unwrap().is_invited,
+            "Room should not be marked as invited after joining"
+        );
 
         // Alice sends a message
         alice.send_message(&room_id, "Hello Bob!").unwrap();
@@ -235,7 +244,9 @@ mod tests {
         bob.sync_once().unwrap();
 
         // Exchange several messages
-        alice.send_message(&room_id, "Hey Bob, how are you?").unwrap();
+        alice
+            .send_message(&room_id, "Hey Bob, how are you?")
+            .unwrap();
         bob.sync_once().unwrap();
 
         bob.send_message(&room_id, "I'm good Alice! You?").unwrap();
@@ -249,7 +260,11 @@ mod tests {
         let alice_msgs = alice.messages(&room_id, 50, None).unwrap().messages;
         let bob_msgs = bob.messages(&room_id, 50, None).unwrap().messages;
 
-        let expected = ["Hey Bob, how are you?", "I'm good Alice! You?", "Great, thanks!"];
+        let expected = [
+            "Hey Bob, how are you?",
+            "I'm good Alice! You?",
+            "Great, thanks!",
+        ];
         for body in &expected {
             assert!(
                 alice_msgs.iter().any(|m| m.body == *body),
@@ -409,8 +424,16 @@ mod tests {
         // Bob syncs — should see the invite
         bob.sync_once().unwrap();
         let bob_rooms = bob.rooms().unwrap();
-        let invited = bob_rooms.iter().filter(|r| r.is_invited).collect::<Vec<_>>();
-        assert_eq!(invited.len(), 1, "Bob should see 1 invited room, got {}", invited.len());
+        let invited = bob_rooms
+            .iter()
+            .filter(|r| r.is_invited)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            invited.len(),
+            1,
+            "Bob should see 1 invited room, got {}",
+            invited.len()
+        );
         assert_eq!(invited[0].id, room_id);
 
         // Cleanup
@@ -432,9 +455,15 @@ mod tests {
         alice.sync_once().unwrap();
 
         let msgs = alice.messages(&room_id, 50, None).unwrap().messages;
-        let event_id = &msgs.iter().find(|m| m.body == "Original message").unwrap().event_id;
+        let event_id = &msgs
+            .iter()
+            .find(|m| m.body == "Original message")
+            .unwrap()
+            .event_id;
 
-        alice.edit_message(&room_id, event_id, "Edited message").unwrap();
+        alice
+            .edit_message(&room_id, event_id, "Edited message")
+            .unwrap();
         alice.sync_once().unwrap();
 
         let msgs = alice.messages(&room_id, 50, None).unwrap().messages;
@@ -458,7 +487,11 @@ mod tests {
 
         let msgs = alice.messages(&room_id, 50, None).unwrap().messages;
         assert!(msgs.iter().any(|m| m.body == "Delete me"));
-        let event_id = &msgs.iter().find(|m| m.body == "Delete me").unwrap().event_id;
+        let event_id = &msgs
+            .iter()
+            .find(|m| m.body == "Delete me")
+            .unwrap()
+            .event_id;
 
         alice.redact_message(&room_id, event_id).unwrap();
         alice.sync_once().unwrap();
@@ -495,7 +528,10 @@ mod tests {
         // Bob should have unread notifications
         let bob_rooms = bob.rooms().unwrap();
         let room = bob_rooms.iter().find(|r| r.id == room_id).unwrap();
-        assert!(room.unread_count > 0, "Bob should have unread notifications");
+        assert!(
+            room.unread_count > 0,
+            "Bob should have unread notifications"
+        );
 
         // Bob reads the messages and sends a read receipt
         let bob_msgs = bob.messages(&room_id, 50, None).unwrap().messages;
@@ -506,7 +542,10 @@ mod tests {
         // After sending the read receipt and syncing, unread count should be 0
         let bob_rooms = bob.rooms().unwrap();
         let room = bob_rooms.iter().find(|r| r.id == room_id).unwrap();
-        assert_eq!(room.unread_count, 0, "Unread count should be 0 after read receipt");
+        assert_eq!(
+            room.unread_count, 0,
+            "Unread count should be 0 after read receipt"
+        );
     }
 
     // -- Test: Public room discovery and join --
@@ -557,9 +596,7 @@ mod tests {
 
         // Send 8 messages
         for i in 1..=8 {
-            alice
-                .send_message(&room_id, &format!("msg-{i}"))
-                .unwrap();
+            alice.send_message(&room_id, &format!("msg-{i}")).unwrap();
         }
         alice.sync_once().unwrap();
 
@@ -700,9 +737,8 @@ mod tests {
         alice.send_typing_notice(&room_id, true).unwrap();
 
         // Bob syncs with a listener that captures typing updates
-        let typing_updates: std::sync::Arc<
-            std::sync::Mutex<Vec<(String, Vec<String>)>>,
-        > = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let typing_updates: std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<String>)>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
 
         struct TypingListener {
             updates: std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<String>)>>>,
@@ -754,10 +790,9 @@ mod tests {
             0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
             0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
             0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // 1x1
-            0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89,
-            0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, // IDAT chunk
-            0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01,
-            0x0D, 0x0A, 0x2D, 0xB4,
+            0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0D, 0x49,
+            0x44, 0x41, 0x54, // IDAT chunk
+            0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4,
             0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, // IEND chunk
             0xAE, 0x42, 0x60, 0x82,
         ]
@@ -783,7 +818,14 @@ mod tests {
         // Alice sends a PNG attachment.
         let payload = tiny_png();
         alice
-            .send_attachment(&room_id, "pixel.png", "image/png", payload.clone(), Some(1), Some(1))
+            .send_attachment(
+                &room_id,
+                "pixel.png",
+                "image/png",
+                payload.clone(),
+                Some(1),
+                Some(1),
+            )
             .expect("alice failed to send attachment");
 
         alice.sync_once().unwrap();
@@ -809,7 +851,9 @@ mod tests {
         );
 
         // Bob downloads the media and verifies bytes match Alice's payload.
-        let downloaded = bob.download_media(media_source).expect("download_media failed");
+        let downloaded = bob
+            .download_media(media_source)
+            .expect("download_media failed");
         assert_eq!(
             downloaded, payload,
             "downloaded bytes should match what Alice uploaded"
@@ -840,11 +884,17 @@ mod tests {
 
         // Bob finds the message and reacts with thumbs up
         let bob_msgs = bob.messages(&room_id, 50, None).unwrap().messages;
-        let target = bob_msgs.iter().find(|m| m.body == "React to this!").unwrap();
+        let target = bob_msgs
+            .iter()
+            .find(|m| m.body == "React to this!")
+            .unwrap();
         let reaction_event_id = bob
             .send_reaction(&room_id, &target.event_id, "\u{1f44d}")
             .expect("bob should be able to react");
-        assert!(reaction_event_id.starts_with('$'), "reaction should return a valid event ID");
+        assert!(
+            reaction_event_id.starts_with('$'),
+            "reaction should return a valid event ID"
+        );
 
         // Both sync
         alice.sync_once().unwrap();
@@ -852,7 +902,10 @@ mod tests {
 
         // Alice should see the reaction on the message
         let alice_msgs = alice.messages(&room_id, 50, None).unwrap().messages;
-        let reacted = alice_msgs.iter().find(|m| m.body == "React to this!").unwrap();
+        let reacted = alice_msgs
+            .iter()
+            .find(|m| m.body == "React to this!")
+            .unwrap();
         assert!(
             reacted.reactions.iter().any(|r| r.key == "\u{1f44d}"),
             "Alice should see Bob's thumbs up reaction, got: {:?}",
@@ -887,7 +940,10 @@ mod tests {
         // Upload avatar
         let avatar_data = tiny_png();
         let mxc_url = alice.set_avatar("image/png", avatar_data).unwrap();
-        assert!(mxc_url.starts_with("mxc://"), "avatar upload should return mxc URL, got: {mxc_url}");
+        assert!(
+            mxc_url.starts_with("mxc://"),
+            "avatar upload should return mxc URL, got: {mxc_url}"
+        );
 
         let profile = alice.get_profile().unwrap();
         assert!(profile.avatar_url.is_some());
@@ -920,7 +976,9 @@ mod tests {
         assert_eq!(room.display_name, "Renamed Room");
 
         // Set a topic.
-        alice.set_room_topic(&room_id, "A room for testing").unwrap();
+        alice
+            .set_room_topic(&room_id, "A room for testing")
+            .unwrap();
         alice.sync_once().unwrap();
         let rooms = alice.rooms().unwrap();
         let room = rooms.iter().find(|r| r.id == room_id).unwrap();
@@ -956,7 +1014,10 @@ mod tests {
 
         // Bob reacts
         let bob_msgs = bob.messages(&room_id, 50, None).unwrap().messages;
-        let target = bob_msgs.iter().find(|m| m.body == "React and unreact").unwrap();
+        let target = bob_msgs
+            .iter()
+            .find(|m| m.body == "React and unreact")
+            .unwrap();
         let reaction_event_id = bob
             .send_reaction(&room_id, &target.event_id, "\u{2764}\u{fe0f}")
             .unwrap();
@@ -966,9 +1027,15 @@ mod tests {
 
         // Verify the reaction exists
         let alice_msgs = alice.messages(&room_id, 50, None).unwrap().messages;
-        let reacted = alice_msgs.iter().find(|m| m.body == "React and unreact").unwrap();
+        let reacted = alice_msgs
+            .iter()
+            .find(|m| m.body == "React and unreact")
+            .unwrap();
         assert!(
-            reacted.reactions.iter().any(|r| r.key == "\u{2764}\u{fe0f}"),
+            reacted
+                .reactions
+                .iter()
+                .any(|r| r.key == "\u{2764}\u{fe0f}"),
             "reaction should exist before redaction"
         );
 
@@ -979,7 +1046,10 @@ mod tests {
 
         // Alice should no longer see the reaction
         let alice_msgs = alice.messages(&room_id, 50, None).unwrap().messages;
-        let after = alice_msgs.iter().find(|m| m.body == "React and unreact").unwrap();
+        let after = alice_msgs
+            .iter()
+            .find(|m| m.body == "React and unreact")
+            .unwrap();
         assert!(
             !after.reactions.iter().any(|r| r.key == "\u{2764}\u{fe0f}"),
             "reaction should be gone after redaction, got: {:?}",

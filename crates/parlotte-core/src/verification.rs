@@ -73,9 +73,12 @@ pub(crate) fn request_info(req: &VerificationRequest) -> VerificationRequestInfo
 
 /// Compute the current `VerificationState` from the stored request and SAS.
 pub(crate) fn derive_state(active: &ActiveVerification) -> Result<VerificationState> {
-    let request = active.request.as_ref().ok_or_else(|| ParlotteError::Unknown {
-        message: "no active verification".to_string(),
-    })?;
+    let request = active
+        .request
+        .as_ref()
+        .ok_or_else(|| ParlotteError::Unknown {
+            message: "no active verification".to_string(),
+        })?;
 
     if request.is_cancelled() {
         let reason = request

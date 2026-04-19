@@ -8,7 +8,10 @@ use matrix_sdk::{Client, SessionMeta, SessionTokens};
 use std::sync::Arc;
 
 use crate::error::{ParlotteError, Result};
-use crate::message::{LoginMethods, MatrixSessionData, MessageBatch, MessageInfo, ReactionInfo, SessionInfo, SsoProvider, UserProfile};
+use crate::message::{
+    LoginMethods, MatrixSessionData, MessageBatch, MessageInfo, ReactionInfo, SessionInfo,
+    SsoProvider, UserProfile,
+};
 use crate::recovery::RecoveryState;
 use crate::room::{PublicRoomInfo, RoomInfo, RoomMemberInfo};
 use crate::sync::{SyncListener, SyncManager};
@@ -68,13 +71,14 @@ impl ParlotteClient {
 
         let client = self.client();
         self.runtime.block_on(async {
-            let response = client
-                .matrix_auth()
-                .get_login_types()
-                .await
-                .map_err(|e| ParlotteError::Auth {
-                    message: format!("failed to get login types: {e}"),
-                })?;
+            let response =
+                client
+                    .matrix_auth()
+                    .get_login_types()
+                    .await
+                    .map_err(|e| ParlotteError::Auth {
+                        message: format!("failed to get login types: {e}"),
+                    })?;
 
             let mut supports_password = false;
             let mut supports_sso = false;
@@ -123,10 +127,9 @@ impl ParlotteClient {
     pub fn login_sso_callback(&self, callback_url: &str) -> Result<SessionInfo> {
         let client = self.client();
         self.runtime.block_on(async {
-            let url = url::Url::parse(callback_url)
-                .map_err(|e| ParlotteError::Auth {
-                    message: format!("invalid callback URL: {e}"),
-                })?;
+            let url = url::Url::parse(callback_url).map_err(|e| ParlotteError::Auth {
+                message: format!("invalid callback URL: {e}"),
+            })?;
 
             client
                 .matrix_auth()
@@ -236,12 +239,13 @@ impl ParlotteClient {
         let client = self.client();
         self.runtime.block_on(async {
             let account = client.account();
-            let display_name = account
-                .get_display_name()
-                .await
-                .map_err(|e| ParlotteError::Network {
-                    message: format!("failed to get display name: {e}"),
-                })?;
+            let display_name =
+                account
+                    .get_display_name()
+                    .await
+                    .map_err(|e| ParlotteError::Network {
+                        message: format!("failed to get display name: {e}"),
+                    })?;
             let avatar_url = account
                 .get_avatar_url()
                 .await
@@ -275,11 +279,12 @@ impl ParlotteClient {
     /// `mime_type` must be a valid image media type (e.g. `"image/png"`).
     /// `data` is the raw image bytes.
     pub fn set_avatar(&self, mime_type: &str, data: Vec<u8>) -> Result<String> {
-        let mime: mime::Mime = mime_type.parse().map_err(|e: mime::FromStrError| {
-            ParlotteError::Unknown {
-                message: format!("invalid MIME type {mime_type:?}: {e}"),
-            }
-        })?;
+        let mime: mime::Mime =
+            mime_type
+                .parse()
+                .map_err(|e: mime::FromStrError| ParlotteError::Unknown {
+                    message: format!("invalid MIME type {mime_type:?}: {e}"),
+                })?;
 
         let client = self.client();
         self.runtime.block_on(async {
@@ -331,7 +336,11 @@ impl ParlotteClient {
         self.runtime.block_on(async {
             let joined = client.joined_rooms();
             let invited = client.invited_rooms();
-            tracing::debug!(joined = joined.len(), invited = invited.len(), "listing rooms");
+            tracing::debug!(
+                joined = joined.len(),
+                invited = invited.len(),
+                "listing rooms"
+            );
             let mut rooms = Vec::with_capacity(joined.len() + invited.len());
 
             for room in joined {
@@ -483,14 +492,18 @@ impl ParlotteClient {
                 })?;
 
             let mut options = MessagesOptions::backward();
-            options.limit = matrix_sdk::ruma::UInt::new(limit).unwrap_or(matrix_sdk::ruma::UInt::MAX);
+            options.limit =
+                matrix_sdk::ruma::UInt::new(limit).unwrap_or(matrix_sdk::ruma::UInt::MAX);
             if let Some(token) = from {
                 options.from = Some(token.to_owned());
             }
 
-            let response = room.messages(options).await.map_err(|e| ParlotteError::Room {
-                message: format!("failed to fetch messages: {e}"),
-            })?;
+            let response = room
+                .messages(options)
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to fetch messages: {e}"),
+                })?;
 
             use matrix_sdk::ruma::events::room::message::Relation;
             use std::collections::HashMap;
@@ -509,20 +522,20 @@ impl ParlotteClient {
 
                 // Collect m.reaction events
                 if let AnySyncTimelineEvent::MessageLike(
-                    matrix_sdk::ruma::events::AnySyncMessageLikeEvent::Reaction(reaction_event),
+                    matrix_sdk::ruma::events::AnySyncMessageLikeEvent::Reaction(
+                        matrix_sdk::ruma::events::SyncMessageLikeEvent::Original(original),
+                    ),
                 ) = &deserialized
                 {
-                    if let matrix_sdk::ruma::events::SyncMessageLikeEvent::Original(original) = reaction_event {
-                        let annotation = &original.content.relates_to;
-                        reactions_map
-                            .entry(annotation.event_id.to_string())
-                            .or_default()
-                            .push(ReactionInfo {
-                                event_id: original.event_id.to_string(),
-                                key: annotation.key.clone(),
-                                sender: original.sender.to_string(),
-                            });
-                    }
+                    let annotation = &original.content.relates_to;
+                    reactions_map
+                        .entry(annotation.event_id.to_string())
+                        .or_default()
+                        .push(ReactionInfo {
+                            event_id: original.event_id.to_string(),
+                            key: annotation.key.clone(),
+                            sender: original.sender.to_string(),
+                        });
                 }
 
                 if let AnySyncTimelineEvent::MessageLike(
@@ -537,11 +550,9 @@ impl ParlotteClient {
 
                     // Check if this is an edit (replacement) event
                     if let Some(Relation::Replacement(replacement)) = &original.content.relates_to {
-                        let (body, formatted) = extract_body_and_formatted(&replacement.new_content.msgtype);
-                        edits.insert(
-                            replacement.event_id.to_string(),
-                            (body, formatted),
-                        );
+                        let (body, formatted) =
+                            extract_body_and_formatted(&replacement.new_content.msgtype);
+                        edits.insert(replacement.event_id.to_string(), (body, formatted));
                         continue;
                     }
 
@@ -552,7 +563,8 @@ impl ParlotteClient {
                         _ => None,
                     };
 
-                    let (body, formatted_body) = extract_body_and_formatted(&original.content.msgtype);
+                    let (body, formatted_body) =
+                        extract_body_and_formatted(&original.content.msgtype);
                     let message_type = message_type_str(&original.content.msgtype).to_owned();
                     let (media_source, media_mime_type, media_width, media_height, media_size) =
                         extract_media_info(&original.content.msgtype);
@@ -694,9 +706,8 @@ impl ParlotteClient {
                 message: format!("invalid event ID: {e}"),
             })?;
 
-            let content = ReactionEventContent::new(
-                Annotation::new(event_id.to_owned(), key.to_owned()),
-            );
+            let content =
+                ReactionEventContent::new(Annotation::new(event_id.to_owned(), key.to_owned()));
             let response = room.send(content).await.map_err(|e| ParlotteError::Room {
                 message: format!("failed to send reaction: {e}"),
             })?;
@@ -722,9 +733,10 @@ impl ParlotteClient {
                     message: format!("room {room_id} not found"),
                 })?;
 
-            let event_id = <&EventId>::try_from(reaction_event_id).map_err(|e| ParlotteError::Room {
-                message: format!("invalid event ID: {e}"),
-            })?;
+            let event_id =
+                <&EventId>::try_from(reaction_event_id).map_err(|e| ParlotteError::Room {
+                    message: format!("invalid event ID: {e}"),
+                })?;
 
             room.redact(event_id, None, None)
                 .await
@@ -800,11 +812,8 @@ impl ParlotteClient {
     /// The listener is called after each successful sync response.
     /// Uses long-polling (30s timeout) instead of periodic polling.
     pub fn start_sync(&self, listener: Arc<dyn SyncListener>) -> Result<()> {
-        self.sync_manager.start_persistent_sync(
-            self.client().clone(),
-            &self.runtime,
-            listener,
-        )
+        self.sync_manager
+            .start_persistent_sync(self.client().clone(), &self.runtime, listener)
     }
 
     /// Stop the persistent sync loop.
@@ -843,13 +852,9 @@ impl ParlotteClient {
                 );
             } else {
                 // Private rooms are encrypted by default
-                let encryption_content =
-                    RoomEncryptionEventContent::with_recommended_defaults();
-                let encryption_event =
-                    InitialStateEvent::new(EmptyStateKey, encryption_content);
-                request
-                    .initial_state
-                    .push(encryption_event.to_raw_any());
+                let encryption_content = RoomEncryptionEventContent::with_recommended_defaults();
+                let encryption_event = InitialStateEvent::new(EmptyStateKey, encryption_content);
+                request.initial_state.push(encryption_event.to_raw_any());
             }
 
             let response = client
@@ -870,12 +875,13 @@ impl ParlotteClient {
         let client = self.client();
         self.runtime.block_on(async {
             let request = get_public_rooms_filtered::v3::Request::new();
-            let response = client
-                .public_rooms_filtered(request)
-                .await
-                .map_err(|e| ParlotteError::Room {
-                    message: format!("failed to fetch public rooms: {e}"),
-                })?;
+            let response =
+                client
+                    .public_rooms_filtered(request)
+                    .await
+                    .map_err(|e| ParlotteError::Room {
+                        message: format!("failed to fetch public rooms: {e}"),
+                    })?;
 
             Ok(response
                 .chunk
@@ -963,11 +969,9 @@ impl ParlotteClient {
                     message: format!("room {room_id} not found"),
                 })?;
 
-            room.leave()
-                .await
-                .map_err(|e| ParlotteError::Room {
-                    message: format!("failed to leave room: {e}"),
-                })?;
+            room.leave().await.map_err(|e| ParlotteError::Room {
+                message: format!("failed to leave room: {e}"),
+            })?;
 
             Ok(())
         })
@@ -991,9 +995,11 @@ impl ParlotteClient {
                 })?;
 
             let event_id: OwnedEventId =
-                event_id.try_into().map_err(|e: matrix_sdk::ruma::IdParseError| ParlotteError::Room {
-                    message: format!("invalid event ID: {e}"),
-                })?;
+                event_id
+                    .try_into()
+                    .map_err(|e: matrix_sdk::ruma::IdParseError| ParlotteError::Room {
+                        message: format!("invalid event ID: {e}"),
+                    })?;
 
             room.send_single_receipt(
                 matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType::Read,
@@ -1054,15 +1060,18 @@ impl ParlotteClient {
         };
         use matrix_sdk::ruma::UInt;
 
-        let mime: mime::Mime = mime_type.parse().map_err(|e: mime::FromStrError| ParlotteError::Room {
-            message: format!("invalid MIME type {mime_type:?}: {e}"),
-        })?;
+        let mime: mime::Mime =
+            mime_type
+                .parse()
+                .map_err(|e: mime::FromStrError| ParlotteError::Room {
+                    message: format!("invalid MIME type {mime_type:?}: {e}"),
+                })?;
 
         let size_uint = UInt::new(data.len() as u64);
         let info = if mime.type_() == mime::IMAGE {
             AttachmentInfo::Image(BaseImageInfo {
-                width: width.map(|w| UInt::from(w)),
-                height: height.map(|h| UInt::from(h)),
+                width: width.map(UInt::from),
+                height: height.map(UInt::from),
                 size: size_uint,
                 blurhash: None,
                 is_animated: None,
@@ -1077,9 +1086,11 @@ impl ParlotteClient {
                 message: format!("invalid room ID: {e}"),
             })?;
 
-            let room = client.get_room(room_id).ok_or_else(|| ParlotteError::Room {
-                message: format!("room {room_id} not found"),
-            })?;
+            let room = client
+                .get_room(room_id)
+                .ok_or_else(|| ParlotteError::Room {
+                    message: format!("room {room_id} not found"),
+                })?;
 
             let config = AttachmentConfig::new().info(info);
             room.send_attachment(filename.to_owned(), &mime, data, config)
@@ -1107,9 +1118,8 @@ impl ParlotteClient {
 
         // Try deserialising as full MediaSource JSON first; fall back to treating
         // the string as a plain mxc URI for callers that pass one directly.
-        let source: MediaSource = serde_json::from_str(media_source).unwrap_or_else(|_| {
-            MediaSource::Plain(OwnedMxcUri::from(media_source))
-        });
+        let source: MediaSource = serde_json::from_str(media_source)
+            .unwrap_or_else(|_| MediaSource::Plain(OwnedMxcUri::from(media_source)));
 
         // Validate that whichever variant we ended up with has a valid mxc URI.
         let uri_str = match &source {
@@ -1154,12 +1164,12 @@ impl ParlotteClient {
                     message: format!("room {room_id} not found"),
                 })?;
 
-            let members = room
-                .members(RoomMemberships::JOIN)
-                .await
-                .map_err(|e| ParlotteError::Room {
-                    message: format!("failed to fetch members: {e}"),
-                })?;
+            let members =
+                room.members(RoomMemberships::JOIN)
+                    .await
+                    .map_err(|e| ParlotteError::Room {
+                        message: format!("failed to fetch members: {e}"),
+                    })?;
 
             Ok(members
                 .into_iter()
@@ -1168,7 +1178,9 @@ impl ParlotteClient {
                     display_name: m.display_name().map(|s| s.to_owned()),
                     avatar_url: m.avatar_url().map(|u| u.to_string()),
                     power_level: match m.power_level() {
-                        matrix_sdk::ruma::events::room::power_levels::UserPowerLevel::Int(n) => n.into(),
+                        matrix_sdk::ruma::events::room::power_levels::UserPowerLevel::Int(n) => {
+                            n.into()
+                        }
                         _ => 100,
                     },
                     role: match m.suggested_role_for_power_level() {
@@ -1200,7 +1212,7 @@ impl ParlotteClient {
                 .is_last_device()
                 .await
                 .map(Some)
-                .or_else(|_| Ok(None))
+                .or(Ok(None))
         })
     }
 
@@ -1238,7 +1250,10 @@ impl ParlotteClient {
 
             let recovery = client.encryption().recovery();
             let enable = if let Some(p) = passphrase {
-                recovery.enable().with_passphrase(p).wait_for_backups_to_upload()
+                recovery
+                    .enable()
+                    .with_passphrase(p)
+                    .wait_for_backups_to_upload()
             } else {
                 recovery.enable().wait_for_backups_to_upload()
             };
@@ -1395,11 +1410,13 @@ impl ParlotteClient {
                 .ok_or_else(|| ParlotteError::Unknown {
                     message: "own user identity unavailable after bootstrap".to_string(),
                 })?;
-            let request = identity.request_verification().await.map_err(|e| {
-                ParlotteError::Unknown {
-                    message: format!("failed to request verification: {e}"),
-                }
-            })?;
+            let request =
+                identity
+                    .request_verification()
+                    .await
+                    .map_err(|e| ParlotteError::Unknown {
+                        message: format!("failed to request verification: {e}"),
+                    })?;
             let info = verification::request_info(&request);
             let mut guard = active.lock().await;
             guard.request = Some(request);
@@ -1413,9 +1430,12 @@ impl ParlotteClient {
         let active = self.active_verification.clone();
         self.runtime.block_on(async {
             let guard = active.lock().await;
-            let request = guard.request.as_ref().ok_or_else(|| ParlotteError::Unknown {
-                message: "no active verification to accept".to_string(),
-            })?;
+            let request = guard
+                .request
+                .as_ref()
+                .ok_or_else(|| ParlotteError::Unknown {
+                    message: "no active verification to accept".to_string(),
+                })?;
             request.accept().await.map_err(|e| ParlotteError::Unknown {
                 message: format!("failed to accept verification: {e}"),
             })
@@ -1428,12 +1448,18 @@ impl ParlotteClient {
         self.runtime.block_on(async {
             let sas_opt = {
                 let guard = active.lock().await;
-                let request = guard.request.as_ref().ok_or_else(|| ParlotteError::Unknown {
-                    message: "no active verification".to_string(),
-                })?;
-                request.start_sas().await.map_err(|e| ParlotteError::Unknown {
-                    message: format!("failed to start SAS: {e}"),
-                })?
+                let request = guard
+                    .request
+                    .as_ref()
+                    .ok_or_else(|| ParlotteError::Unknown {
+                        message: "no active verification".to_string(),
+                    })?;
+                request
+                    .start_sas()
+                    .await
+                    .map_err(|e| ParlotteError::Unknown {
+                        message: format!("failed to start SAS: {e}"),
+                    })?
             };
             let mut guard = active.lock().await;
             guard.sas = sas_opt;
@@ -1534,9 +1560,7 @@ impl ParlotteClient {
         let active = self.active_verification.clone();
         self.runtime.block_on(async {
             let guard = active.lock().await;
-            if guard.request.is_none() {
-                return None;
-            }
+            guard.request.as_ref()?;
             verification::derive_state(&guard).ok()
         })
     }
@@ -1564,7 +1588,9 @@ fn extract_body_and_formatted(
             let formatted = text
                 .formatted
                 .as_ref()
-                .filter(|f| f.format == matrix_sdk::ruma::events::room::message::MessageFormat::Html)
+                .filter(|f| {
+                    f.format == matrix_sdk::ruma::events::room::message::MessageFormat::Html
+                })
                 .map(|f| f.body.clone());
             (text.body.clone(), formatted)
         }
@@ -1572,7 +1598,9 @@ fn extract_body_and_formatted(
             let formatted = notice
                 .formatted
                 .as_ref()
-                .filter(|f| f.format == matrix_sdk::ruma::events::room::message::MessageFormat::Html)
+                .filter(|f| {
+                    f.format == matrix_sdk::ruma::events::room::message::MessageFormat::Html
+                })
                 .map(|f| f.body.clone());
             (notice.body.clone(), formatted)
         }
@@ -1580,7 +1608,9 @@ fn extract_body_and_formatted(
             let formatted = emote
                 .formatted
                 .as_ref()
-                .filter(|f| f.format == matrix_sdk::ruma::events::room::message::MessageFormat::Html)
+                .filter(|f| {
+                    f.format == matrix_sdk::ruma::events::room::message::MessageFormat::Html
+                })
                 .map(|f| f.body.clone());
             (emote.body.clone(), formatted)
         }
@@ -1597,7 +1627,13 @@ fn extract_body_and_formatted(
 ///
 /// Returns (source mxc URI, mime type, width, height, size). All fields are
 /// `None` for non-media message types (text, notice, emote, location).
-type MediaFields = (Option<String>, Option<String>, Option<u32>, Option<u32>, Option<u64>);
+type MediaFields = (
+    Option<String>,
+    Option<String>,
+    Option<u32>,
+    Option<u32>,
+    Option<u64>,
+);
 
 fn extract_media_info(
     msgtype: &matrix_sdk::ruma::events::room::message::MessageType,
@@ -1625,7 +1661,7 @@ fn extract_media_info(
                         i.mimetype.clone(),
                         i.width.map(|v| u64::from(v) as u32),
                         i.height.map(|v| u64::from(v) as u32),
-                        i.size.map(|v| u64::from(v)),
+                        i.size.map(u64::from),
                     )
                 })
                 .unwrap_or((None, None, None, None));
@@ -1636,7 +1672,7 @@ fn extract_media_info(
             let (mime, size) = file
                 .info
                 .as_ref()
-                .map(|i| (i.mimetype.clone(), i.size.map(|v| u64::from(v))))
+                .map(|i| (i.mimetype.clone(), i.size.map(u64::from)))
                 .unwrap_or((None, None));
             (source, mime, None, None, size)
         }
@@ -1650,7 +1686,7 @@ fn extract_media_info(
                         i.mimetype.clone(),
                         i.width.map(|v| u64::from(v) as u32),
                         i.height.map(|v| u64::from(v) as u32),
-                        i.size.map(|v| u64::from(v)),
+                        i.size.map(u64::from),
                     )
                 })
                 .unwrap_or((None, None, None, None));
@@ -1661,7 +1697,7 @@ fn extract_media_info(
             let (mime, size) = audio
                 .info
                 .as_ref()
-                .map(|i| (i.mimetype.clone(), i.size.map(|v| u64::from(v))))
+                .map(|i| (i.mimetype.clone(), i.size.map(u64::from)))
                 .unwrap_or((None, None));
             (source, mime, None, None, size)
         }
@@ -1670,7 +1706,9 @@ fn extract_media_info(
 }
 
 /// Return a short string label for the message type.
-fn message_type_str(msgtype: &matrix_sdk::ruma::events::room::message::MessageType) -> &'static str {
+fn message_type_str(
+    msgtype: &matrix_sdk::ruma::events::room::message::MessageType,
+) -> &'static str {
     use matrix_sdk::ruma::events::room::message::MessageType;
 
     match msgtype {
@@ -1691,7 +1729,7 @@ impl Drop for ParlotteClient {
         // Drop the inner Client inside the tokio runtime so that deadpool's
         // SQLite connection pool cleanup has access to a reactor.
         if let Some(client) = self.inner.take() {
-            let _ = self.runtime.block_on(async move {
+            self.runtime.block_on(async move {
                 drop(client);
             });
         }
@@ -1919,7 +1957,14 @@ mod tests {
     #[test]
     fn send_attachment_rejects_invalid_room_id() {
         let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
-        let result = client.send_attachment("garbage", "file.png", "image/png", vec![1, 2, 3], Some(10), Some(10));
+        let result = client.send_attachment(
+            "garbage",
+            "file.png",
+            "image/png",
+            vec![1, 2, 3],
+            Some(10),
+            Some(10),
+        );
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
     }
@@ -1953,7 +1998,10 @@ mod tests {
             None,
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("invalid MIME type"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("invalid MIME type"));
     }
 
     #[test]
@@ -2098,7 +2146,10 @@ mod tests {
         let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
         let result = client.set_avatar("not a valid mime", vec![1, 2, 3]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("invalid MIME type"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("invalid MIME type"));
     }
 
     // Note: SQLite store path testing is covered in integration tests because

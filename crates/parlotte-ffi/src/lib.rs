@@ -344,7 +344,10 @@ pub struct VerificationEmoji {
 
 impl From<CoreEmojiInfo> for VerificationEmoji {
     fn from(e: CoreEmojiInfo) -> Self {
-        Self { symbol: e.symbol, description: e.description }
+        Self {
+            symbol: e.symbol,
+            description: e.description,
+        }
     }
 }
 
@@ -372,9 +375,7 @@ impl From<CoreVerificationState> for VerificationState {
             }
             CoreVerificationState::SasConfirmed => VerificationState::SasConfirmed,
             CoreVerificationState::Done => VerificationState::Done,
-            CoreVerificationState::Cancelled { reason } => {
-                VerificationState::Cancelled { reason }
-            }
+            CoreVerificationState::Cancelled { reason } => VerificationState::Cancelled { reason },
         }
     }
 }
@@ -466,12 +467,25 @@ impl ParlotteClientFFI {
         Ok(self.inner.send_message(&room_id, &body)?)
     }
 
-    pub fn send_reply(&self, room_id: String, event_id: String, body: String) -> Result<(), ParlotteError> {
+    pub fn send_reply(
+        &self,
+        room_id: String,
+        event_id: String,
+        body: String,
+    ) -> Result<(), ParlotteError> {
         Ok(self.inner.send_reply(&room_id, &event_id, &body)?)
     }
 
-    pub fn messages(&self, room_id: String, limit: u64, from: Option<String>) -> Result<MessageBatch, ParlotteError> {
-        Ok(self.inner.messages(&room_id, limit, from.as_deref())?.into())
+    pub fn messages(
+        &self,
+        room_id: String,
+        limit: u64,
+        from: Option<String>,
+    ) -> Result<MessageBatch, ParlotteError> {
+        Ok(self
+            .inner
+            .messages(&room_id, limit, from.as_deref())?
+            .into())
     }
 
     pub fn sync_once(&self) -> Result<(), ParlotteError> {
@@ -483,7 +497,12 @@ impl ParlotteClientFFI {
     }
 
     pub fn public_rooms(&self) -> Result<Vec<PublicRoomInfo>, ParlotteError> {
-        Ok(self.inner.public_rooms()?.into_iter().map(Into::into).collect())
+        Ok(self
+            .inner
+            .public_rooms()?
+            .into_iter()
+            .map(Into::into)
+            .collect())
     }
 
     pub fn invite_user(&self, room_id: String, user_id: String) -> Result<(), ParlotteError> {
@@ -499,14 +518,27 @@ impl ParlotteClientFFI {
     }
 
     pub fn room_members(&self, room_id: String) -> Result<Vec<RoomMemberInfo>, ParlotteError> {
-        Ok(self.inner.room_members(&room_id)?.into_iter().map(Into::into).collect())
+        Ok(self
+            .inner
+            .room_members(&room_id)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
     }
 
-    pub fn send_read_receipt(&self, room_id: String, event_id: String) -> Result<(), ParlotteError> {
+    pub fn send_read_receipt(
+        &self,
+        room_id: String,
+        event_id: String,
+    ) -> Result<(), ParlotteError> {
         Ok(self.inner.send_read_receipt(&room_id, &event_id)?)
     }
 
-    pub fn send_typing_notice(&self, room_id: String, is_typing: bool) -> Result<(), ParlotteError> {
+    pub fn send_typing_notice(
+        &self,
+        room_id: String,
+        is_typing: bool,
+    ) -> Result<(), ParlotteError> {
         Ok(self.inner.send_typing_notice(&room_id, is_typing)?)
     }
 
@@ -519,14 +551,21 @@ impl ParlotteClientFFI {
         width: Option<u32>,
         height: Option<u32>,
     ) -> Result<(), ParlotteError> {
-        Ok(self.inner.send_attachment(&room_id, &filename, &mime_type, data, width, height)?)
+        Ok(self
+            .inner
+            .send_attachment(&room_id, &filename, &mime_type, data, width, height)?)
     }
 
     pub fn download_media(&self, mxc_uri: String) -> Result<Vec<u8>, ParlotteError> {
         Ok(self.inner.download_media(&mxc_uri)?)
     }
 
-    pub fn edit_message(&self, room_id: String, event_id: String, new_body: String) -> Result<(), ParlotteError> {
+    pub fn edit_message(
+        &self,
+        room_id: String,
+        event_id: String,
+        new_body: String,
+    ) -> Result<(), ParlotteError> {
         Ok(self.inner.edit_message(&room_id, &event_id, &new_body)?)
     }
 
@@ -534,11 +573,20 @@ impl ParlotteClientFFI {
         Ok(self.inner.redact_message(&room_id, &event_id)?)
     }
 
-    pub fn send_reaction(&self, room_id: String, event_id: String, key: String) -> Result<String, ParlotteError> {
+    pub fn send_reaction(
+        &self,
+        room_id: String,
+        event_id: String,
+        key: String,
+    ) -> Result<String, ParlotteError> {
         Ok(self.inner.send_reaction(&room_id, &event_id, &key)?)
     }
 
-    pub fn redact_reaction(&self, room_id: String, reaction_event_id: String) -> Result<(), ParlotteError> {
+    pub fn redact_reaction(
+        &self,
+        room_id: String,
+        reaction_event_id: String,
+    ) -> Result<(), ParlotteError> {
         Ok(self.inner.redact_reaction(&room_id, &reaction_event_id)?)
     }
 
@@ -546,7 +594,11 @@ impl ParlotteClientFFI {
         Ok(self.inner.login_methods()?.into())
     }
 
-    pub fn sso_login_url(&self, redirect_url: String, idp_id: Option<String>) -> Result<String, ParlotteError> {
+    pub fn sso_login_url(
+        &self,
+        redirect_url: String,
+        idp_id: Option<String>,
+    ) -> Result<String, ParlotteError> {
         Ok(self.inner.sso_login_url(&redirect_url, idp_id.as_deref())?)
     }
 
@@ -723,7 +775,10 @@ mod tests {
         assert_eq!(ffi.message_type, "text");
         assert_eq!(ffi.timestamp_ms, 1700000000000);
         assert!(ffi.is_edited);
-        assert_eq!(ffi.replied_to_event_id.as_deref(), Some("$parent:example.com"));
+        assert_eq!(
+            ffi.replied_to_event_id.as_deref(),
+            Some("$parent:example.com")
+        );
     }
 
     #[test]
@@ -770,7 +825,10 @@ mod tests {
             reactions: vec![],
         };
         let ffi: MessageInfo = core.into();
-        assert_eq!(ffi.media_source.as_deref(), Some("mxc://example.com/abc123"));
+        assert_eq!(
+            ffi.media_source.as_deref(),
+            Some("mxc://example.com/abc123")
+        );
         assert_eq!(ffi.media_mime_type.as_deref(), Some("image/png"));
         assert_eq!(ffi.media_width, Some(1920));
         assert_eq!(ffi.media_height, Some(1080));
@@ -982,8 +1040,14 @@ mod tests {
             supports_password: true,
             supports_sso: true,
             sso_providers: vec![
-                CoreSsoProvider { id: "google".into(), name: "Google".into() },
-                CoreSsoProvider { id: "github".into(), name: "GitHub".into() },
+                CoreSsoProvider {
+                    id: "google".into(),
+                    name: "Google".into(),
+                },
+                CoreSsoProvider {
+                    id: "github".into(),
+                    name: "GitHub".into(),
+                },
             ],
         };
         let ffi: LoginMethods = core.into();
@@ -1035,10 +1099,22 @@ mod tests {
 
     #[test]
     fn recovery_state_converts_all_variants() {
-        assert_eq!(RecoveryState::from(CoreRecoveryState::Unknown), RecoveryState::Unknown);
-        assert_eq!(RecoveryState::from(CoreRecoveryState::Enabled), RecoveryState::Enabled);
-        assert_eq!(RecoveryState::from(CoreRecoveryState::Disabled), RecoveryState::Disabled);
-        assert_eq!(RecoveryState::from(CoreRecoveryState::Incomplete), RecoveryState::Incomplete);
+        assert_eq!(
+            RecoveryState::from(CoreRecoveryState::Unknown),
+            RecoveryState::Unknown
+        );
+        assert_eq!(
+            RecoveryState::from(CoreRecoveryState::Enabled),
+            RecoveryState::Enabled
+        );
+        assert_eq!(
+            RecoveryState::from(CoreRecoveryState::Disabled),
+            RecoveryState::Disabled
+        );
+        assert_eq!(
+            RecoveryState::from(CoreRecoveryState::Incomplete),
+            RecoveryState::Incomplete
+        );
     }
 
     // -- Error conversion --
@@ -1046,12 +1122,42 @@ mod tests {
     #[test]
     fn error_converts_all_variants() {
         let cases = vec![
-            (CoreError::Auth { message: "bad".into() }, "Auth"),
-            (CoreError::Network { message: "timeout".into() }, "Network"),
-            (CoreError::Room { message: "gone".into() }, "Room"),
-            (CoreError::Store { message: "corrupt".into() }, "Store"),
-            (CoreError::Sync { message: "failed".into() }, "Sync"),
-            (CoreError::Unknown { message: "wat".into() }, "Unknown"),
+            (
+                CoreError::Auth {
+                    message: "bad".into(),
+                },
+                "Auth",
+            ),
+            (
+                CoreError::Network {
+                    message: "timeout".into(),
+                },
+                "Network",
+            ),
+            (
+                CoreError::Room {
+                    message: "gone".into(),
+                },
+                "Room",
+            ),
+            (
+                CoreError::Store {
+                    message: "corrupt".into(),
+                },
+                "Store",
+            ),
+            (
+                CoreError::Sync {
+                    message: "failed".into(),
+                },
+                "Sync",
+            ),
+            (
+                CoreError::Unknown {
+                    message: "wat".into(),
+                },
+                "Unknown",
+            ),
         ];
 
         for (core_err, expected_variant) in cases {
@@ -1065,14 +1171,19 @@ mod tests {
             };
             let ffi_err: ParlotteError = core_err.into();
             let debug = format!("{:?}", ffi_err);
-            assert!(debug.contains(expected_variant), "expected {expected_variant} in {debug}");
+            assert!(
+                debug.contains(expected_variant),
+                "expected {expected_variant} in {debug}"
+            );
             assert!(debug.contains(&msg), "expected message '{msg}' in {debug}");
         }
     }
 
     #[test]
     fn error_preserves_message_content() {
-        let core = CoreError::Auth { message: "invalid credentials for @user:matrix.org".into() };
+        let core = CoreError::Auth {
+            message: "invalid credentials for @user:matrix.org".into(),
+        };
         let ffi: ParlotteError = core.into();
         assert_eq!(
             ffi.to_string(),

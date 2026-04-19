@@ -73,17 +73,19 @@ impl SyncManager {
             // Register a global event handler for typing notifications.
             // Fires for every room when typing state changes during sync.
             let typing_listener = listener.clone();
-            client.add_event_handler(
-                move |event: SyncTypingEvent, room: matrix_sdk::Room| {
-                    let listener = typing_listener.clone();
-                    async move {
-                        let room_id = room.room_id().to_string();
-                        let user_ids: Vec<String> =
-                            event.content.user_ids.iter().map(|uid| uid.to_string()).collect();
-                        listener.on_typing_update(room_id, user_ids);
-                    }
-                },
-            );
+            client.add_event_handler(move |event: SyncTypingEvent, room: matrix_sdk::Room| {
+                let listener = typing_listener.clone();
+                async move {
+                    let room_id = room.room_id().to_string();
+                    let user_ids: Vec<String> = event
+                        .content
+                        .user_ids
+                        .iter()
+                        .map(|uid| uid.to_string())
+                        .collect();
+                    listener.on_typing_update(room_id, user_ids);
+                }
+            });
 
             let result = client
                 .sync_with_callback(settings, |_response| {

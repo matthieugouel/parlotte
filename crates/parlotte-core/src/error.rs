@@ -90,6 +90,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::unnecessary_literal_unwrap)]
     fn result_type_alias_works() {
         let ok: Result<i32> = Ok(42);
         assert_eq!(ok.unwrap(), 42);

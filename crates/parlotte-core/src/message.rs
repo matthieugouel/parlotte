@@ -111,7 +111,10 @@ mod tests {
             avatar_url: Some("mxc://example.com/abc123".into()),
         };
         assert_eq!(profile.display_name.as_deref(), Some("Alice"));
-        assert_eq!(profile.avatar_url.as_deref(), Some("mxc://example.com/abc123"));
+        assert_eq!(
+            profile.avatar_url.as_deref(),
+            Some("mxc://example.com/abc123")
+        );
     }
 
     #[test]
@@ -159,7 +162,10 @@ mod tests {
         assert_eq!(msg.formatted_body.as_deref(), Some("<b>Hello!</b>"));
         assert_eq!(msg.message_type, "text");
         assert_eq!(msg.timestamp_ms, 1700000000000);
-        assert_eq!(msg.replied_to_event_id.as_deref(), Some("$parent:example.com"));
+        assert_eq!(
+            msg.replied_to_event_id.as_deref(),
+            Some("$parent:example.com")
+        );
     }
 
     #[test]

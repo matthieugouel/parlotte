@@ -34,9 +34,21 @@ mod tests {
 
     #[test]
     fn state_conversion_covers_all_variants() {
-        assert_eq!(RecoveryState::from(SdkRecoveryState::Unknown), RecoveryState::Unknown);
-        assert_eq!(RecoveryState::from(SdkRecoveryState::Enabled), RecoveryState::Enabled);
-        assert_eq!(RecoveryState::from(SdkRecoveryState::Disabled), RecoveryState::Disabled);
-        assert_eq!(RecoveryState::from(SdkRecoveryState::Incomplete), RecoveryState::Incomplete);
+        assert_eq!(
+            RecoveryState::from(SdkRecoveryState::Unknown),
+            RecoveryState::Unknown
+        );
+        assert_eq!(
+            RecoveryState::from(SdkRecoveryState::Enabled),
+            RecoveryState::Enabled
+        );
+        assert_eq!(
+            RecoveryState::from(SdkRecoveryState::Disabled),
+            RecoveryState::Disabled
+        );
+        assert_eq!(
+            RecoveryState::from(SdkRecoveryState::Incomplete),
+            RecoveryState::Incomplete
+        );
     }
 }
