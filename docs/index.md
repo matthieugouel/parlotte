@@ -3,9 +3,7 @@ layout: home
 title: Parlotte
 ---
 
-# Parlotte
-
-Fast, private, native Matrix messaging for macOS.
+Fast, native Matrix messaging for macOS.
 
 Parlotte is a Matrix client built from the ground up in SwiftUI — no Electron, no wrapped web view. Your messages stay end-to-end encrypted, your data stays on your device, and the app talks only to the homeserver you choose.
 

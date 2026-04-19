@@ -4,8 +4,6 @@ title: Privacy Policy
 permalink: /privacy/
 ---
 
-# Privacy Policy
-
 *Last updated: 2026-04-19*
 
 Parlotte is a Matrix messaging client. The developers of Parlotte do not collect, store, or transmit any of your data.

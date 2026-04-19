@@ -4,8 +4,6 @@ title: Support
 permalink: /support/
 ---
 
-# Support
-
 ## Getting help
 
 - **Bugs and feature requests**: [github.com/matthieugouel/parlotte/issues](https://github.com/matthieugouel/parlotte/issues)
