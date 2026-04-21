@@ -20,10 +20,12 @@ pub fn init_logging(level: String) {
 use parlotte_core::{
     EmojiInfo as CoreEmojiInfo, LoginMethods as CoreLoginMethods,
     MatrixSessionData as CoreMatrixSessionData, MessageBatch as CoreMessageBatch,
+    OidcSessionData as CoreOidcSessionData,
     MessageInfo as CoreMessageInfo, ParlotteClient as CoreClient, ParlotteError as CoreError,
     PublicRoomInfo as CorePublicRoomInfo, ReactionInfo as CoreReactionInfo,
     RecoveryState as CoreRecoveryState, RoomInfo as CoreRoomInfo,
-    RoomMemberInfo as CoreRoomMemberInfo, SessionInfo as CoreSessionInfo,
+    RoomMemberInfo as CoreRoomMemberInfo, SessionChangeEvent as CoreSessionChangeEvent,
+    SessionInfo as CoreSessionInfo,
     SsoProvider as CoreSsoProvider, UserProfile as CoreUserProfile,
     VerificationRequestInfo as CoreVerificationRequestInfo,
     VerificationState as CoreVerificationState,
@@ -210,6 +212,39 @@ impl From<MatrixSessionData> for CoreMatrixSessionData {
 }
 
 #[derive(uniffi::Record)]
+pub struct OidcSessionData {
+    pub user_id: String,
+    pub device_id: String,
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+    pub client_id: String,
+}
+
+impl From<CoreOidcSessionData> for OidcSessionData {
+    fn from(s: CoreOidcSessionData) -> Self {
+        Self {
+            user_id: s.user_id,
+            device_id: s.device_id,
+            access_token: s.access_token,
+            refresh_token: s.refresh_token,
+            client_id: s.client_id,
+        }
+    }
+}
+
+impl From<OidcSessionData> for CoreOidcSessionData {
+    fn from(s: OidcSessionData) -> Self {
+        Self {
+            user_id: s.user_id,
+            device_id: s.device_id,
+            access_token: s.access_token,
+            refresh_token: s.refresh_token,
+            client_id: s.client_id,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
 pub struct PublicRoomInfo {
     pub id: String,
     pub name: Option<String>,
@@ -271,6 +306,7 @@ pub struct LoginMethods {
     pub supports_password: bool,
     pub supports_sso: bool,
     pub sso_providers: Vec<SsoProvider>,
+    pub supports_oidc: bool,
 }
 
 impl From<CoreLoginMethods> for LoginMethods {
@@ -279,6 +315,7 @@ impl From<CoreLoginMethods> for LoginMethods {
             supports_password: m.supports_password,
             supports_sso: m.supports_sso,
             sso_providers: m.sso_providers.into_iter().map(Into::into).collect(),
+            supports_oidc: m.supports_oidc,
         }
     }
 }
@@ -427,6 +464,52 @@ impl parlotte_core::SyncListener for SyncListenerBridge {
 
     fn on_typing_update(&self, room_id: String, user_ids: Vec<String>) {
         self.inner.on_typing_update(room_id, user_ids);
+    }
+}
+
+/// A session-level event emitted by the matrix-sdk. See
+/// [`ParlotteSessionChangeListener`].
+#[derive(uniffi::Enum)]
+pub enum SessionChangeEvent {
+    /// OIDC tokens were rotated. Persist `session` immediately.
+    TokensRefreshed { session: OidcSessionData },
+    /// The server returned `M_UNKNOWN_TOKEN`. User must sign in again.
+    UnknownToken { soft_logout: bool },
+}
+
+impl From<CoreSessionChangeEvent> for SessionChangeEvent {
+    fn from(e: CoreSessionChangeEvent) -> Self {
+        match e {
+            CoreSessionChangeEvent::TokensRefreshed { session } => {
+                SessionChangeEvent::TokensRefreshed {
+                    session: session.into(),
+                }
+            }
+            CoreSessionChangeEvent::UnknownToken { soft_logout } => {
+                SessionChangeEvent::UnknownToken { soft_logout }
+            }
+        }
+    }
+}
+
+/// Callback fired whenever OIDC tokens refresh or the server invalidates
+/// our token. Register once after login/restore so rotated refresh tokens
+/// can be persisted.
+#[uniffi::export(callback_interface)]
+pub trait ParlotteSessionChangeListener: Send + Sync {
+    fn on_session_change(&self, event: SessionChangeEvent);
+}
+
+struct SessionChangeListenerBridge {
+    inner: Box<dyn ParlotteSessionChangeListener>,
+}
+
+unsafe impl Send for SessionChangeListenerBridge {}
+unsafe impl Sync for SessionChangeListenerBridge {}
+
+impl parlotte_core::SessionChangeListener for SessionChangeListenerBridge {
+    fn on_session_change(&self, event: CoreSessionChangeEvent) {
+        self.inner.on_session_change(event.into());
     }
 }
 
@@ -606,6 +689,33 @@ impl ParlotteClientFFI {
 
     pub fn login_sso_callback(&self, callback_url: String) -> Result<SessionInfo, ParlotteError> {
         Ok(self.inner.login_sso_callback(&callback_url)?.into())
+    }
+
+    pub fn oidc_login_url(&self, redirect_uri: String) -> Result<String, ParlotteError> {
+        Ok(self.inner.oidc_login_url(&redirect_uri)?)
+    }
+
+    pub fn oidc_finish_login(&self, callback_url: String) -> Result<SessionInfo, ParlotteError> {
+        Ok(self.inner.oidc_finish_login(&callback_url)?.into())
+    }
+
+    pub fn oidc_session(&self) -> Option<OidcSessionData> {
+        self.inner.oidc_session().map(Into::into)
+    }
+
+    pub fn oidc_restore_session(
+        &self,
+        session_data: OidcSessionData,
+    ) -> Result<(), ParlotteError> {
+        Ok(self.inner.oidc_restore_session(session_data.into())?)
+    }
+
+    pub fn set_session_change_listener(
+        &self,
+        listener: Box<dyn ParlotteSessionChangeListener>,
+    ) {
+        self.inner
+            .set_session_change_listener(Arc::new(SessionChangeListenerBridge { inner: listener }));
     }
 
     pub fn get_profile(&self) -> Result<UserProfile, ParlotteError> {
@@ -1051,10 +1161,12 @@ mod tests {
                     name: "GitHub".into(),
                 },
             ],
+            supports_oidc: true,
         };
         let ffi: LoginMethods = core.into();
         assert!(ffi.supports_password);
         assert!(ffi.supports_sso);
+        assert!(ffi.supports_oidc);
         assert_eq!(ffi.sso_providers.len(), 2);
         assert_eq!(ffi.sso_providers[0].id, "google");
         assert_eq!(ffi.sso_providers[1].name, "GitHub");
@@ -1066,10 +1178,12 @@ mod tests {
             supports_password: true,
             supports_sso: false,
             sso_providers: vec![],
+            supports_oidc: false,
         };
         let ffi: LoginMethods = core.into();
         assert!(ffi.supports_password);
         assert!(!ffi.supports_sso);
+        assert!(!ffi.supports_oidc);
         assert!(ffi.sso_providers.is_empty());
     }
 

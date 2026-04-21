@@ -1,19 +1,27 @@
 use matrix_sdk::authentication::matrix::MatrixSession;
+use matrix_sdk::authentication::oauth::registration::{
+    ApplicationType, ClientMetadata, Localized, OAuthGrantType,
+};
+use matrix_sdk::authentication::oauth::{
+    ClientId, OAuthSession, UrlOrQuery, UserSession,
+};
 use matrix_sdk::room::MessagesOptions;
 use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
 use matrix_sdk::ruma::events::AnySyncTimelineEvent;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
+use matrix_sdk::ruma::serde::Raw;
 use matrix_sdk::store::RoomLoadSettings;
 use matrix_sdk::{Client, SessionMeta, SessionTokens};
 use std::sync::Arc;
 
 use crate::error::{ParlotteError, Result};
 use crate::message::{
-    LoginMethods, MatrixSessionData, MessageBatch, MessageInfo, ReactionInfo, SessionInfo,
-    SsoProvider, UserProfile,
+    LoginMethods, MatrixSessionData, MessageBatch, MessageInfo, OidcSessionData, ReactionInfo,
+    SessionInfo, SsoProvider, UserProfile,
 };
 use crate::recovery::RecoveryState;
 use crate::room::{PublicRoomInfo, RoomInfo, RoomMemberInfo};
+use crate::session::{SessionChangeEvent, SessionChangeListener};
 use crate::sync::{SyncListener, SyncManager};
 use crate::verification::{
     self, ActiveVerification, SharedActive, VerificationListener, VerificationRequestInfo,
@@ -46,7 +54,9 @@ impl ParlotteClient {
         })?;
 
         let client = runtime.block_on(async {
-            let mut builder = Client::builder().homeserver_url(homeserver_url);
+            let mut builder = Client::builder()
+                .homeserver_url(homeserver_url)
+                .handle_refresh_tokens();
 
             if let Some(path) = store_path {
                 builder = builder.sqlite_store(path, None);
@@ -100,10 +110,13 @@ impl ParlotteClient {
                 }
             }
 
+            let supports_oidc = client.oauth().server_metadata().await.is_ok();
+
             Ok(LoginMethods {
                 supports_password,
                 supports_sso,
                 sso_providers,
+                supports_oidc,
             })
         })
     }
@@ -228,6 +241,158 @@ impl ParlotteClient {
                 .await
                 .map_err(|e| ParlotteError::Auth {
                     message: format!("failed to restore session: {e}"),
+                })?;
+
+            Ok(())
+        })
+    }
+
+    /// Begin an MSC3861 OIDC login. Dynamically registers the client with the
+    /// homeserver's auth service, then returns an authorization URL for the
+    /// user to open in a browser. `redirect_uri` must be a custom-scheme URL
+    /// the app can catch (e.g. `dev.nxthdr.parlotte:/oauth-callback`).
+    pub fn oidc_login_url(&self, redirect_uri: &str) -> Result<String> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            let redirect = url::Url::parse(redirect_uri).map_err(|e| ParlotteError::Auth {
+                message: format!("invalid redirect URI: {e}"),
+            })?;
+
+            let metadata = build_client_metadata(redirect.clone())?;
+
+            let data = client
+                .oauth()
+                .login(redirect, None, Some(Raw::new(&metadata).map_err(|e| {
+                    ParlotteError::Auth { message: format!("failed to serialize client metadata: {e}") }
+                })?.into()), None)
+                .build()
+                .await
+                .map_err(|e| ParlotteError::Auth {
+                    message: format!("failed to build OIDC login URL: {e}"),
+                })?;
+
+            Ok(data.url.to_string())
+        })
+    }
+
+    /// Complete the OIDC login with the full redirect URL the browser was sent
+    /// to (including the `code` and `state` query parameters).
+    pub fn oidc_finish_login(&self, callback_url: &str) -> Result<SessionInfo> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            let url = url::Url::parse(callback_url).map_err(|e| ParlotteError::Auth {
+                message: format!("invalid callback URL: {e}"),
+            })?;
+
+            client
+                .oauth()
+                .finish_login(UrlOrQuery::Url(url))
+                .await
+                .map_err(|e| ParlotteError::Auth {
+                    message: format!("OIDC finish_login failed: {e}"),
+                })?;
+
+            let user_id = client
+                .user_id()
+                .ok_or_else(|| ParlotteError::Auth {
+                    message: "no user_id after OIDC login".to_string(),
+                })?
+                .to_string();
+
+            let device_id = client
+                .device_id()
+                .ok_or_else(|| ParlotteError::Auth {
+                    message: "no device_id after OIDC login".to_string(),
+                })?
+                .to_string();
+
+            Ok(SessionInfo { user_id, device_id })
+        })
+    }
+
+    /// Get the current OIDC session for persistence. Returns None if not
+    /// logged in via OIDC.
+    pub fn oidc_session(&self) -> Option<OidcSessionData> {
+        let session = self.client().oauth().full_session()?;
+        Some(OidcSessionData {
+            user_id: session.user.meta.user_id.to_string(),
+            device_id: session.user.meta.device_id.to_string(),
+            access_token: session.user.tokens.access_token,
+            refresh_token: session.user.tokens.refresh_token,
+            client_id: session.client_id.as_str().to_owned(),
+        })
+    }
+
+    /// Register a listener that is invoked whenever matrix-sdk refreshes the
+    /// OIDC access/refresh tokens or observes an `M_UNKNOWN_TOKEN` logout.
+    /// Should be called after every login/restore so rotated refresh tokens
+    /// get persisted — MAS invalidates the previous refresh token once a new
+    /// one is minted.
+    pub fn set_session_change_listener(&self, listener: Arc<dyn SessionChangeListener>) {
+        let client = self.client().clone();
+        self.runtime.spawn(async move {
+            let mut rx = client.subscribe_to_session_changes();
+            loop {
+                let change = match rx.recv().await {
+                    Ok(c) => c,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                };
+                match change {
+                    matrix_sdk::SessionChange::TokensRefreshed => {
+                        if let Some(s) = client.oauth().full_session() {
+                            let session = OidcSessionData {
+                                user_id: s.user.meta.user_id.to_string(),
+                                device_id: s.user.meta.device_id.to_string(),
+                                access_token: s.user.tokens.access_token,
+                                refresh_token: s.user.tokens.refresh_token,
+                                client_id: s.client_id.as_str().to_owned(),
+                            };
+                            listener
+                                .on_session_change(SessionChangeEvent::TokensRefreshed { session });
+                        } else {
+                            tracing::warn!(
+                                "TokensRefreshed fired but client.oauth().full_session() returned None"
+                            );
+                        }
+                    }
+                    matrix_sdk::SessionChange::UnknownToken { soft_logout } => {
+                        listener
+                            .on_session_change(SessionChangeEvent::UnknownToken { soft_logout });
+                    }
+                }
+            }
+        });
+    }
+
+    /// Restore a previously-saved OIDC session.
+    pub fn oidc_restore_session(&self, data: OidcSessionData) -> Result<()> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            let user_id = matrix_sdk::ruma::UserId::parse(&data.user_id).map_err(|e| {
+                ParlotteError::Auth {
+                    message: format!("invalid user ID: {e}"),
+                }
+            })?;
+            let device_id: matrix_sdk::ruma::OwnedDeviceId = data.device_id.into();
+
+            let session = OAuthSession {
+                client_id: ClientId::new(data.client_id),
+                user: UserSession {
+                    meta: SessionMeta { user_id, device_id },
+                    tokens: SessionTokens {
+                        access_token: data.access_token,
+                        refresh_token: data.refresh_token,
+                    },
+                },
+            };
+
+            client
+                .oauth()
+                .restore_session(session, RoomLoadSettings::default())
+                .await
+                .map_err(|e| ParlotteError::Auth {
+                    message: format!("failed to restore OIDC session: {e}"),
                 })?;
 
             Ok(())
@@ -1722,6 +1887,23 @@ fn message_type_str(
         MessageType::Location(_) => "location",
         _ => "unknown",
     }
+}
+
+fn build_client_metadata(redirect_uri: url::Url) -> Result<ClientMetadata> {
+    let client_uri =
+        url::Url::parse("https://nxthdr.github.io/parlotte/").map_err(|e| ParlotteError::Auth {
+            message: format!("invalid client URI: {e}"),
+        })?;
+
+    let mut metadata = ClientMetadata::new(
+        ApplicationType::Native,
+        vec![OAuthGrantType::AuthorizationCode {
+            redirect_uris: vec![redirect_uri],
+        }],
+        Localized::new(client_uri, []),
+    );
+    metadata.client_name = Some(Localized::new("Parlotte".to_owned(), []));
+    Ok(metadata)
 }
 
 impl Drop for ParlotteClient {

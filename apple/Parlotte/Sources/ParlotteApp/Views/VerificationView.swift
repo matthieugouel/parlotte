@@ -24,6 +24,7 @@ struct VerificationSheet: View {
                     .foregroundStyle(.red)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             }
 
             actions

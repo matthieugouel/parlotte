@@ -72,8 +72,28 @@ struct LoginView: View {
                     .disabled(appState.isLoading || appState.username.isEmpty || appState.password.isEmpty)
                 }
 
-                // SSO login buttons
-                if appState.supportsSso {
+                // Native OIDC (MSC3861) takes precedence when supported
+                if appState.supportsOidc {
+                    if appState.supportsPassword {
+                        Divider()
+                            .padding(.vertical, 4)
+                    }
+
+                    Button {
+                        Task { await appState.loginWithOidc() }
+                    } label: {
+                        if appState.isLoading {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label("Login", systemImage: "person.badge.key")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(appState.isLoading)
+                } else if appState.supportsSso {
                     if appState.supportsPassword {
                         Divider()
                             .padding(.vertical, 4)
@@ -121,6 +141,7 @@ struct LoginView: View {
                     .foregroundStyle(.red)
                     .font(.callout)
                     .frame(maxWidth: 300)
+                    .textSelection(.enabled)
             }
         }
         .padding(40)

@@ -30,6 +30,11 @@ public protocol MatrixClientProtocol: Sendable {
     func loginMethods() async throws -> LoginMethods
     func ssoLoginUrl(redirectUrl: String, idpId: String?) async throws -> String
     func loginSsoCallback(callbackUrl: String) async throws -> SessionInfo
+    func oidcLoginUrl(redirectUri: String) async throws -> String
+    func oidcFinishLogin(callbackUrl: String) async throws -> SessionInfo
+    func oidcSession() async -> OidcSessionData?
+    func oidcRestoreSession(_ sessionData: OidcSessionData) async throws
+    func setSessionChangeListener(_ listener: ParlotteSessionChangeListener)
     func getProfile() async throws -> UserProfile
     func setDisplayName(name: String) async throws
     func setAvatar(mimeType: String, data: Data) async throws -> String

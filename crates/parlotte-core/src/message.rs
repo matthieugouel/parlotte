@@ -78,6 +78,9 @@ pub struct LoginMethods {
     pub supports_sso: bool,
     /// Available SSO identity providers (empty if SSO is not supported).
     pub sso_providers: Vec<SsoProvider>,
+    /// Whether the server supports native OIDC (MSC3861). When true, prefer
+    /// `oidc_login_url` / `oidc_finish_login` over the legacy SSO flow.
+    pub supports_oidc: bool,
 }
 
 /// Information about the current session.
@@ -98,6 +101,17 @@ pub struct MatrixSessionData {
     pub device_id: String,
     /// The access token for this session.
     pub access_token: String,
+}
+
+/// Full OIDC session data needed to restore a previous MSC3861 login.
+#[derive(Debug, Clone)]
+pub struct OidcSessionData {
+    pub user_id: String,
+    pub device_id: String,
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+    /// OAuth client ID obtained from dynamic registration.
+    pub client_id: String,
 }
 
 #[cfg(test)]

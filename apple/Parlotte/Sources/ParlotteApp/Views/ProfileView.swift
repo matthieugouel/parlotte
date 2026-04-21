@@ -236,6 +236,7 @@ struct ProfileView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             }
         }
     }
@@ -267,6 +268,7 @@ struct ProfileView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             }
         }
     }

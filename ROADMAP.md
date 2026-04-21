@@ -42,6 +42,7 @@
 - [x] Unread indicators / notification badges
 - [x] Read receipts (mark rooms as read)
 - [x] User profile (display name, avatar)
+- [ ] Avatar upload from profile view (core already has `upload_avatar`; wire it into ProfileView)
 - [x] Light & dark mode
 - [x] Design system (spacing tokens, semantic colors, typography scale)
 - [x] Message grouping (consecutive same-sender messages collapse)
@@ -55,7 +56,7 @@
 
 ## Security
 - [x] Legacy SSO login (browser-based, works with most Synapse servers)
-- [ ] Native OIDC login (MAS / OpenID Connect)
+- [x] Native OIDC login (MAS / OpenID Connect) — MSC3861 via matrix-sdk OAuth, `ASWebAuthenticationSession` on Apple, dynamic client registration, refresh-token persistence
 - [x] Device verification (cross-signing)
   - [x] Self-verification via SAS emoji (initiator + receiver flows)
   - [x] Core + FFI: request, accept, start SAS, confirm/mismatch, cancel
@@ -69,6 +70,7 @@
   - [x] Settings UI: status, enable, recovery-key display, key entry
   - [x] Post-login prompt when `RecoveryState::Incomplete` (new device)
   - [x] `is_last_device` warning before logout
+  - [ ] Reset recovery from this device (lost-key path): wire `recovery().reset_identity()` — on MAS, surface the returned OAuth approval URL in the browser, then tear down the old backup and generate a fresh cross-signing identity + recovery key. Add a "Reset encryption" button in Profile → Recovery when state is `.incomplete`.
 
 ## Testing
 - [x] Unit tests for input validation and error paths (parlotte-core)

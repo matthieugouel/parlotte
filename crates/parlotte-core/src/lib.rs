@@ -5,17 +5,19 @@ pub mod error;
 pub mod message;
 pub mod recovery;
 pub mod room;
+pub mod session;
 pub mod sync;
 pub mod verification;
 
 pub use client::ParlotteClient;
 pub use error::ParlotteError;
 pub use message::{
-    LoginMethods, MatrixSessionData, MessageBatch, MessageInfo, ReactionInfo, SessionInfo,
-    SsoProvider, UserProfile,
+    LoginMethods, MatrixSessionData, MessageBatch, MessageInfo, OidcSessionData, ReactionInfo,
+    SessionInfo, SsoProvider, UserProfile,
 };
 pub use recovery::RecoveryState;
 pub use room::{PublicRoomInfo, RoomInfo, RoomMemberInfo};
+pub use session::{SessionChangeEvent, SessionChangeListener};
 pub use sync::SyncListener;
 pub use verification::{
     EmojiInfo, VerificationListener, VerificationRequestInfo, VerificationState,

@@ -139,6 +139,7 @@ public final class AppState {
     public var ssoProviders: [SsoProvider] = []
     public var supportsPassword = true
     public var supportsSso = false
+    public var supportsOidc = false
     public var isDetectingLoginMethods = false
 
     public var client: (any MatrixClientProtocol)?
@@ -166,12 +167,14 @@ public final class AppState {
             let methods = try await client.loginMethods()
             supportsPassword = methods.supportsPassword
             supportsSso = methods.supportsSso
+            supportsOidc = methods.supportsOidc
             ssoProviders = methods.ssoProviders
             // Keep client around for SSO flow
             self.client = client
         } catch {
             supportsPassword = true
             supportsSso = false
+            supportsOidc = false
             ssoProviders = []
         }
 
@@ -183,12 +186,11 @@ public final class AppState {
         errorMessage = nil
 
         do {
-            if client == nil {
-                let storePath = storePath()
-                clearStore()
-                client = try MatrixClient(homeserverURL: homeserverURL, storePath: storePath)
-            }
-            guard let client else { return }
+            self.client = nil
+            clearStore()
+            let storePath = storePath()
+            let client = try MatrixClient(homeserverURL: homeserverURL, storePath: storePath)
+            self.client = client
 
             // Start a local HTTP server to receive the SSO callback
             let server = SsoCallbackServer()
@@ -214,6 +216,48 @@ public final class AppState {
             isSyncActive = true
             try await client.syncOnce()
             await fetchProfile()
+            await refreshRooms()
+            startSyncLoop()
+        } catch {
+            errorMessage = error.displayMessage
+        }
+
+        isLoading = false
+    }
+
+    public func loginWithOidc() async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            self.client = nil
+            clearStore()
+            let storePath = storePath()
+            let client = try MatrixClient(homeserverURL: homeserverURL, storePath: storePath)
+            self.client = client
+
+            let redirectUri = OidcAuthSession.callbackURL
+            let authUrl = try await client.oidcLoginUrl(redirectUri: redirectUri)
+            guard let authorizationURL = URL(string: authUrl) else {
+                throw OidcAuthError.noCallback
+            }
+
+            let authSession = OidcAuthSession()
+            let callbackURL = try await authSession.authenticate(authorizationURL: authorizationURL)
+
+            let session = try await client.oidcFinishLogin(callbackUrl: callbackURL.absoluteString)
+            let oidcData = await client.oidcSession()
+            saveOidcSession(oidcData, homeserverURL: homeserverURL)
+            self.loggedInUserId = session.userId
+            password = ""
+            isLoggedIn = true
+            isSyncActive = true
+            try await client.syncOnce()
+            await fetchProfile()
+            await refreshRecoveryState()
+            if recoveryState == .incomplete {
+                isPromptingRecoveryEntry = true
+            }
             await refreshRooms()
             startSyncLoop()
         } catch {
@@ -255,6 +299,11 @@ public final class AppState {
     }
 
     public func restoreSession() async {
+        if let savedOidc = loadOidcSession() {
+            await restoreOidcSession(savedOidc)
+            return
+        }
+
         guard let saved = loadSession() else {
             isCheckingSession = false
             return
@@ -286,6 +335,42 @@ public final class AppState {
         } catch {
             clearSavedSession()
             clearStore()
+            self.client = nil
+            isCheckingSession = false
+        }
+    }
+
+    private func restoreOidcSession(_ saved: SavedOidcSession) async {
+        do {
+            let storePath = storePath()
+            let client = try MatrixClient(homeserverURL: saved.homeserverURL, storePath: storePath)
+            try await client.oidcRestoreSession(OidcSessionData(
+                userId: saved.userId,
+                deviceId: saved.deviceId,
+                accessToken: saved.accessToken,
+                refreshToken: saved.refreshToken,
+                clientId: saved.clientId
+            ))
+            self.homeserverURL = saved.homeserverURL
+            self.client = client
+            self.loggedInUserId = saved.userId
+            await refreshRooms()
+            isLoggedIn = true
+            isSyncActive = true
+            isCheckingSession = false
+            try await client.syncOnce()
+            await fetchProfile()
+            await refreshRecoveryState()
+            if recoveryState == .incomplete {
+                isPromptingRecoveryEntry = true
+            }
+            await refreshRooms()
+            startSyncLoop()
+        } catch {
+            clearSavedOidcSession()
+            clearSavedSession()
+            clearStore()
+            self.client = nil
             isCheckingSession = false
         }
     }
@@ -332,6 +417,7 @@ public final class AppState {
         mediaCache.removeAllObjects()
         previousUnreadCounts = [:]
         clearSavedSession()
+        clearSavedOidcSession()
         clearStore()
     }
 
@@ -1095,6 +1181,7 @@ public final class AppState {
         isSyncActive = true
 
         client.setVerificationListener(VerificationRequestHandler(appState: self))
+        client.setSessionChangeListener(SessionChangeHandler(appState: self))
 
         let listener = SyncUpdateHandler(appState: self)
         do {
@@ -1102,6 +1189,28 @@ public final class AppState {
         } catch {
             isSyncActive = false
         }
+    }
+
+    /// Invoked by `SessionChangeHandler` when matrix-sdk rotates the OIDC
+    /// tokens. MAS invalidates the previous refresh token on use, so we must
+    /// persist the new one immediately — otherwise the next app launch
+    /// restores with an already-invalid refresh token.
+    func handleTokensRefreshed(_ session: OidcSessionData) {
+        saveOidcSession(session, homeserverURL: homeserverURL)
+    }
+
+    /// Invoked when the server returns `M_UNKNOWN_TOKEN`. Both paths
+    /// require a fresh login; we stop sync and clear the saved OIDC
+    /// session so `LoginView` reappears on next app launch.
+    func handleUnknownToken(softLogout: Bool) {
+        client?.stopSync()
+        isSyncActive = false
+        clearSavedOidcSession()
+        clearSavedSession()
+        isLoggedIn = false
+        errorMessage = softLogout
+            ? "Your session expired. Please sign in again."
+            : "Your session was invalidated by the server. Please sign in again."
     }
 
     private func clearStore() {
@@ -1170,6 +1279,59 @@ public final class AppState {
         d.removeObject(forKey: key("userId"))
         d.removeObject(forKey: key("deviceId"))
         d.removeObject(forKey: key("accessToken"))
+    }
+
+    private struct SavedOidcSession {
+        let homeserverURL: String
+        let userId: String
+        let deviceId: String
+        let accessToken: String
+        let refreshToken: String?
+        let clientId: String
+    }
+
+    private func saveOidcSession(_ data: OidcSessionData?, homeserverURL: String) {
+        guard let data else { return }
+        let d = Self.defaults
+        d.set(homeserverURL,    forKey: key("oidc.homeserver"))
+        d.set(data.userId,      forKey: key("oidc.userId"))
+        d.set(data.deviceId,    forKey: key("oidc.deviceId"))
+        d.set(data.accessToken, forKey: key("oidc.accessToken"))
+        d.set(data.clientId,    forKey: key("oidc.clientId"))
+        if let refresh = data.refreshToken {
+            d.set(refresh, forKey: key("oidc.refreshToken"))
+        } else {
+            d.removeObject(forKey: key("oidc.refreshToken"))
+        }
+    }
+
+    private func loadOidcSession() -> SavedOidcSession? {
+        let d = Self.defaults
+        guard
+            let hs       = d.string(forKey: key("oidc.homeserver")),
+            let uid      = d.string(forKey: key("oidc.userId")),
+            let did      = d.string(forKey: key("oidc.deviceId")),
+            let token    = d.string(forKey: key("oidc.accessToken")),
+            let clientId = d.string(forKey: key("oidc.clientId"))
+        else { return nil }
+        return SavedOidcSession(
+            homeserverURL: hs,
+            userId: uid,
+            deviceId: did,
+            accessToken: token,
+            refreshToken: d.string(forKey: key("oidc.refreshToken")),
+            clientId: clientId
+        )
+    }
+
+    private func clearSavedOidcSession() {
+        let d = Self.defaults
+        d.removeObject(forKey: key("oidc.homeserver"))
+        d.removeObject(forKey: key("oidc.userId"))
+        d.removeObject(forKey: key("oidc.deviceId"))
+        d.removeObject(forKey: key("oidc.accessToken"))
+        d.removeObject(forKey: key("oidc.refreshToken"))
+        d.removeObject(forKey: key("oidc.clientId"))
     }
 
     // MARK: - Device verification
@@ -1306,6 +1468,27 @@ private final class VerificationRequestHandler: ParlotteVerificationListener, @u
     func onVerificationRequest(info: VerificationRequestInfo) {
         Task { @MainActor [weak appState] in
             appState?.handleIncomingVerificationRequest(info)
+        }
+    }
+}
+
+/// Bridge from the matrix-sdk session-change broadcast to the main actor.
+private final class SessionChangeHandler: ParlotteSessionChangeListener, @unchecked Sendable {
+    private weak var appState: AppState?
+
+    init(appState: AppState) {
+        self.appState = appState
+    }
+
+    func onSessionChange(event: SessionChangeEvent) {
+        Task { @MainActor [weak appState] in
+            guard let appState else { return }
+            switch event {
+            case .tokensRefreshed(let session):
+                appState.handleTokensRefreshed(session)
+            case .unknownToken(let softLogout):
+                appState.handleUnknownToken(softLogout: softLogout)
+            }
         }
     }
 }

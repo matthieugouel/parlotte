@@ -203,6 +203,35 @@ public actor MatrixClient {
         }.value
     }
 
+    public func oidcLoginUrl(redirectUri: String) async throws -> String {
+        let ffi = self.ffi
+        return try await Task.detached {
+            try ffi.oidcLoginUrl(redirectUri: redirectUri)
+        }.value
+    }
+
+    public func oidcFinishLogin(callbackUrl: String) async throws -> SessionInfo {
+        let ffi = self.ffi
+        return try await Task.detached {
+            try ffi.oidcFinishLogin(callbackUrl: callbackUrl)
+        }.value
+    }
+
+    public func oidcSession() -> OidcSessionData? {
+        ffi.oidcSession()
+    }
+
+    public func oidcRestoreSession(_ sessionData: OidcSessionData) async throws {
+        let ffi = self.ffi
+        try await Task.detached {
+            try ffi.oidcRestoreSession(sessionData: sessionData)
+        }.value
+    }
+
+    public nonisolated func setSessionChangeListener(_ listener: ParlotteSessionChangeListener) {
+        ffi.setSessionChangeListener(listener: listener)
+    }
+
     public func getProfile() async throws -> UserProfile {
         let ffi = self.ffi
         return try await Task.detached {

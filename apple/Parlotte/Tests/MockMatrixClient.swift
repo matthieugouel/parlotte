@@ -232,12 +232,19 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
         inviteUserCalls.append((roomId, userId))
     }
     func loginMethods() async throws -> LoginMethods {
-        LoginMethods(supportsPassword: true, supportsSso: false, ssoProviders: [])
+        LoginMethods(supportsPassword: true, supportsSso: false, ssoProviders: [], supportsOidc: false)
     }
     func ssoLoginUrl(redirectUrl: String, idpId: String?) async throws -> String { "" }
     func loginSsoCallback(callbackUrl: String) async throws -> SessionInfo {
         SessionInfo(userId: "@test:example.com", deviceId: "TESTDEV")
     }
+    func oidcLoginUrl(redirectUri: String) async throws -> String { "" }
+    func oidcFinishLogin(callbackUrl: String) async throws -> SessionInfo {
+        SessionInfo(userId: "@test:example.com", deviceId: "TESTDEV")
+    }
+    func oidcSession() async -> OidcSessionData? { nil }
+    func oidcRestoreSession(_ sessionData: OidcSessionData) async throws {}
+    func setSessionChangeListener(_ listener: ParlotteSessionChangeListener) {}
     func startSync(listener: ParlotteSyncListener) throws {}
     var isSyncing: Bool { false }
 

@@ -1018,6 +1018,7 @@ private struct MediaFileView: View {
                     Text(errorText)
                         .font(.caption)
                         .foregroundStyle(.red)
+                        .textSelection(.enabled)
                 }
             }
 
