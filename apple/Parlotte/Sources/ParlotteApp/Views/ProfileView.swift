@@ -12,6 +12,7 @@ struct ProfileView: View {
     @State private var isEditingName = false
     @State private var avatarData: Data?
     @State private var isShowingRecoveryEntry = false
+    @State private var isConfirmingReset = false
 
     var body: some View {
         ScrollView {
@@ -42,6 +43,37 @@ struct ProfileView: View {
                 isShowingRecoveryEntry = false
             }
         }
+        .sheet(isPresented: Binding(
+            get: { appState.resetIdentityApprovalUrl != nil },
+            set: { if !$0 { Task { await appState.cancelResetIdentity() } } }
+        )) {
+            if let url = appState.resetIdentityApprovalUrl {
+                ResetIdentityApprovalSheet(
+                    approvalUrl: url,
+                    isWorking: appState.isResettingIdentity,
+                    errorMessage: appState.recoveryErrorMessage,
+                    onContinue: {
+                        Task { await appState.finishResetIdentity() }
+                    },
+                    onCancel: {
+                        Task { await appState.cancelResetIdentity() }
+                    }
+                )
+            }
+        }
+        .alert(
+            "Reset encryption?",
+            isPresented: $isConfirmingReset,
+            actions: {
+                Button("Cancel", role: .cancel) {}
+                Button("Reset", role: .destructive) {
+                    Task { await appState.beginResetIdentity() }
+                }
+            },
+            message: {
+                Text("This discards your existing encrypted backup and generates a new recovery key. Messages that can only be decrypted with the old key will stay unreadable. Other devices that were using the old identity will need to re-verify.")
+            }
+        )
     }
 
     @ViewBuilder
@@ -217,7 +249,12 @@ struct ProfileView: View {
                     Button("Enter Recovery Key") {
                         isShowingRecoveryEntry = true
                     }
-                    .disabled(appState.isUpdatingRecovery)
+                    .disabled(appState.isUpdatingRecovery || appState.isResettingIdentity)
+
+                    Button("Reset Encryption", role: .destructive) {
+                        isConfirmingReset = true
+                    }
+                    .disabled(appState.isUpdatingRecovery || appState.isResettingIdentity)
                 case .enabled:
                     Button("Disable", role: .destructive) {
                         Task { await appState.disableRecovery() }
@@ -225,7 +262,7 @@ struct ProfileView: View {
                     .disabled(appState.isUpdatingRecovery)
                 }
 
-                if appState.isUpdatingRecovery {
+                if appState.isUpdatingRecovery || appState.isResettingIdentity {
                     ProgressView()
                         .controlSize(.small)
                 }
@@ -464,5 +501,70 @@ struct RecoveryKeyEntrySheet: View {
         }
         .padding(Spacing.xxl)
         .frame(width: 420)
+    }
+}
+
+private struct ResetIdentityApprovalSheet: View {
+    let approvalUrl: String
+    let isWorking: Bool
+    let errorMessage: String?
+    let onContinue: () -> Void
+    let onCancel: () -> Void
+
+    @State private var hasOpened = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Approve encryption reset")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("Your homeserver needs you to approve resetting your encryption keys. Open the link below, sign in if asked, and approve the reset — then come back here and press Continue.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text(approvalUrl)
+                .font(.system(size: 12, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(Spacing.md)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.sm)
+                        .fill(AppColor.surfaceHover)
+                )
+
+            Button {
+                if let url = URL(string: approvalUrl) {
+                    NSWorkspace.shared.open(url)
+                    hasOpened = true
+                }
+            } label: {
+                Label(hasOpened ? "Reopen in Browser" : "Open in Browser", systemImage: "safari")
+            }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+
+            HStack(spacing: Spacing.sm) {
+                Button("Cancel", role: .cancel) { onCancel() }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(isWorking)
+                Spacer()
+                if isWorking {
+                    ProgressView().controlSize(.small)
+                }
+                Button("Continue") { onContinue() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(isWorking || !hasOpened)
+            }
+        }
+        .padding(Spacing.xxl)
+        .frame(width: 460)
     }
 }

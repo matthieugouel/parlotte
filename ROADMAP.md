@@ -70,7 +70,7 @@
   - [x] Settings UI: status, enable, recovery-key display, key entry
   - [x] Post-login prompt when `RecoveryState::Incomplete` (new device)
   - [x] `is_last_device` warning before logout
-  - [ ] Reset recovery from this device (lost-key path): wire `recovery().reset_identity()` — on MAS, surface the returned OAuth approval URL in the browser, then tear down the old backup and generate a fresh cross-signing identity + recovery key. Add a "Reset encryption" button in Profile → Recovery when state is `.incomplete`.
+  - [x] Reset recovery from this device (lost-key path)
 
 ## Testing
 - [x] Unit tests for input validation and error paths (parlotte-core)

@@ -314,6 +314,27 @@ public actor MatrixClient {
         }.value
     }
 
+    public func beginResetIdentity() async throws -> String? {
+        let ffi = self.ffi
+        return try await Task.detached {
+            try ffi.beginResetIdentity()
+        }.value
+    }
+
+    public func finishResetIdentity() async throws -> String {
+        let ffi = self.ffi
+        return try await Task.detached {
+            try ffi.finishResetIdentity()
+        }.value
+    }
+
+    public func cancelResetIdentity() async {
+        let ffi = self.ffi
+        await Task.detached {
+            ffi.cancelResetIdentity()
+        }.value
+    }
+
     public func isLastDevice() async throws -> Bool? {
         let ffi = self.ffi
         return try await Task.detached {

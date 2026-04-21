@@ -84,6 +84,13 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var disableRecoveryError: Error?
     var recoverCalls: [String] = []
     var recoverError: Error?
+    var beginResetIdentityCalls = 0
+    var beginResetIdentityResult: String? = "https://example.com/approve"
+    var beginResetIdentityError: Error?
+    var finishResetIdentityCalls = 0
+    var finishResetIdentityResult: String = "Es Tb FRESH RECOVERY KEY"
+    var finishResetIdentityError: Error?
+    var cancelResetIdentityCalls = 0
     var isLastDeviceResult: Bool? = nil
     var isLastDeviceError: Error?
     var isLastDeviceCalls = 0
@@ -267,6 +274,22 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     func recover(recoveryKey: String) async throws {
         recoverCalls.append(recoveryKey)
         try errorFor(recoverError)
+    }
+
+    func beginResetIdentity() async throws -> String? {
+        beginResetIdentityCalls += 1
+        try errorFor(beginResetIdentityError)
+        return beginResetIdentityResult
+    }
+
+    func finishResetIdentity() async throws -> String {
+        finishResetIdentityCalls += 1
+        try errorFor(finishResetIdentityError)
+        return finishResetIdentityResult
+    }
+
+    func cancelResetIdentity() async {
+        cancelResetIdentityCalls += 1
     }
 
     func isLastDevice() async throws -> Bool? {

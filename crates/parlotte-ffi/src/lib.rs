@@ -771,6 +771,18 @@ impl ParlotteClientFFI {
         Ok(self.inner.recover(&recovery_key)?)
     }
 
+    pub fn begin_reset_identity(&self) -> Result<Option<String>, ParlotteError> {
+        Ok(self.inner.begin_reset_identity()?)
+    }
+
+    pub fn finish_reset_identity(&self) -> Result<String, ParlotteError> {
+        Ok(self.inner.finish_reset_identity()?)
+    }
+
+    pub fn cancel_reset_identity(&self) {
+        self.inner.cancel_reset_identity();
+    }
+
     pub fn is_last_device(&self) -> Result<Option<bool>, ParlotteError> {
         Ok(self.inner.is_last_device()?)
     }

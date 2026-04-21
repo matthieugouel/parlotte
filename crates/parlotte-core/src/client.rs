@@ -5,6 +5,8 @@ use matrix_sdk::authentication::oauth::registration::{
 use matrix_sdk::authentication::oauth::{
     ClientId, OAuthSession, UrlOrQuery, UserSession,
 };
+use matrix_sdk::encryption::recovery::IdentityResetHandle;
+use matrix_sdk::encryption::CrossSigningResetAuthType;
 use matrix_sdk::room::MessagesOptions;
 use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
 use matrix_sdk::ruma::events::AnySyncTimelineEvent;
@@ -36,6 +38,10 @@ pub struct ParlotteClient {
     runtime: tokio::runtime::Runtime,
     sync_manager: SyncManager,
     active_verification: SharedActive,
+    /// In-progress cross-signing identity reset. Populated by
+    /// `begin_reset_identity` when the server requires OAuth/UIAA approval,
+    /// consumed by `finish_reset_identity` or `cancel_reset_identity`.
+    active_reset: Arc<tokio::sync::Mutex<Option<IdentityResetHandle>>>,
 }
 
 impl ParlotteClient {
@@ -72,6 +78,7 @@ impl ParlotteClient {
             runtime,
             sync_manager: SyncManager::new(),
             active_verification: Arc::new(tokio::sync::Mutex::new(ActiveVerification::default())),
+            active_reset: Arc::new(tokio::sync::Mutex::new(None)),
         })
     }
 
@@ -1494,6 +1501,122 @@ impl ParlotteClient {
             }
             Ok(())
         })
+    }
+
+    /// Start a cross-signing identity reset (the "lost recovery key" path).
+    ///
+    /// Tears down the existing server-side backup + secret storage and begins
+    /// the reset. If the server requires user-interactive approval, the handle
+    /// is stashed on the client and this returns:
+    ///
+    /// - `Some(url)` for OAuth/MAS: the user must open this URL in a browser
+    ///   and approve the reset, then the caller must invoke
+    ///   `finish_reset_identity` to complete the exchange.
+    /// - `None` if no approval was required: the reset is already complete
+    ///   and a fresh recovery key was generated. The key is returned by a
+    ///   follow-up call to `finish_reset_identity` (which is a no-op wait in
+    ///   that case and just runs `enable_recovery`).
+    ///
+    /// Homeservers that only support UIAA (password re-auth) return an
+    /// `Auth` error — parlotte's reset flow is MAS-shaped for now.
+    pub fn begin_reset_identity(&self) -> Result<Option<String>> {
+        let client = self.client();
+        let active_reset = self.active_reset.clone();
+        self.runtime.block_on(async move {
+            let handle = client.encryption().recovery().reset_identity().await.map_err(|e| {
+                ParlotteError::Unknown {
+                    message: format!("failed to start identity reset: {e}"),
+                }
+            })?;
+
+            let Some(handle) = handle else {
+                // No auth required — the SDK already cleared the old backup
+                // and re-enabled key backup. Callers still need to finish
+                // to generate a fresh recovery key.
+                *active_reset.lock().await = None;
+                return Ok(None);
+            };
+
+            let url = match handle.auth_type() {
+                CrossSigningResetAuthType::OAuth(info) => info.approval_url.to_string(),
+                CrossSigningResetAuthType::Uiaa(_) => {
+                    handle.cancel().await;
+                    return Err(ParlotteError::Auth {
+                        message: "this homeserver requires password re-authentication \
+                                  to reset encryption; parlotte only supports the \
+                                  OAuth (MAS) reset flow right now"
+                            .to_owned(),
+                    });
+                }
+            };
+
+            *active_reset.lock().await = Some(handle);
+            Ok(Some(url))
+        })
+    }
+
+    /// Finish a reset started by `begin_reset_identity`.
+    ///
+    /// For the OAuth path this blocks until the user has approved the reset
+    /// in their browser — the SDK polls the upload request until the server
+    /// stops returning UIAA errors. After the cross-signing identity is
+    /// uploaded, a fresh recovery key is generated and returned.
+    ///
+    /// Returns an error if no reset was started.
+    pub fn finish_reset_identity(&self) -> Result<String> {
+        let client = self.client();
+        let active_reset = self.active_reset.clone();
+        self.runtime.block_on(async move {
+            // If a handle exists, drive the auth loop to completion. Pull it
+            // out of the slot so a cancellation during `reset(..)` doesn't
+            // leave a stale handle behind.
+            if let Some(handle) = active_reset.lock().await.take() {
+                handle
+                    .reset(None)
+                    .await
+                    .map_err(|e| ParlotteError::Auth {
+                        message: format!("identity reset failed: {e}"),
+                    })?;
+            }
+
+            // Reset succeeded (or wasn't needed). Generate a fresh recovery
+            // key so the user walks away with something they can actually
+            // use on a new device.
+            let recovery = client.encryption().recovery();
+            let key = recovery
+                .enable()
+                .wait_for_backups_to_upload()
+                .await
+                .map_err(|e| ParlotteError::Unknown {
+                    message: format!(
+                        "identity reset succeeded but failed to enable fresh \
+                         recovery: {e}"
+                    ),
+                })?;
+
+            let state: RecoveryState = recovery.state().into();
+            if !matches!(state, RecoveryState::Enabled) {
+                return Err(ParlotteError::Unknown {
+                    message: format!(
+                        "identity reset finished but recovery state is {state:?} \
+                         — the fresh backup didn't come up; try enabling \
+                         recovery again."
+                    ),
+                });
+            }
+            Ok(key)
+        })
+    }
+
+    /// Cancel an in-progress reset started by `begin_reset_identity`.
+    /// Safe to call when no reset is in progress.
+    pub fn cancel_reset_identity(&self) {
+        let active_reset = self.active_reset.clone();
+        self.runtime.block_on(async move {
+            if let Some(handle) = active_reset.lock().await.take() {
+                handle.cancel().await;
+            }
+        });
     }
 
     // ---------- Device verification (cross-signing / SAS) ----------

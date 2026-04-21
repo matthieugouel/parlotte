@@ -44,6 +44,15 @@ public final class AppState {
     /// Drives a confirmation dialog before the logout actually proceeds.
     public var isConfirmingLastDeviceLogout = false
 
+    // Cross-signing identity reset ("lost recovery key" path).
+    /// OAuth approval URL returned by `beginResetIdentity`. Non-nil means the
+    /// user must open this in the browser, approve, and then confirm to
+    /// finalise the reset. Cleared when the user cancels or finishes.
+    public var resetIdentityApprovalUrl: String?
+    /// `true` while any reset step is in flight (begin/finish/cancel). Used to
+    /// disable the reset button and show a progress indicator.
+    public var isResettingIdentity = false
+
     // Device verification (cross-signing via SAS)
     /// Metadata about the active verification (incoming or outgoing). Non-nil
     /// means the verification modal should be shown.
@@ -409,6 +418,8 @@ public final class AppState {
         pendingRecoveryKey = nil
         recoveryErrorMessage = nil
         isPromptingRecoveryEntry = false
+        resetIdentityApprovalUrl = nil
+        isResettingIdentity = false
         activeVerification = nil
         verificationStateValue = nil
         verificationErrorMessage = nil
@@ -1141,6 +1152,62 @@ public final class AppState {
 
     public func dismissPendingRecoveryKey() {
         pendingRecoveryKey = nil
+    }
+
+    /// Start the "lost recovery key" reset. On success, if the server needs
+    /// browser approval, `resetIdentityApprovalUrl` is set and the caller
+    /// should present it + open it. If no approval is needed,
+    /// `finishResetIdentity` is invoked immediately to generate a fresh key.
+    public func beginResetIdentity() async {
+        guard let client, !isResettingIdentity else { return }
+        isResettingIdentity = true
+        recoveryErrorMessage = nil
+        do {
+            let url = try await client.beginResetIdentity()
+            if let url {
+                resetIdentityApprovalUrl = url
+                isResettingIdentity = false
+            } else {
+                // No auth needed — finalise right away.
+                isResettingIdentity = false
+                await finishResetIdentity()
+            }
+        } catch {
+            recoveryErrorMessage = error.displayMessage
+            isResettingIdentity = false
+        }
+    }
+
+    /// Complete a reset started by `beginResetIdentity`. For the OAuth path,
+    /// call this after the user has approved the reset in their browser;
+    /// the SDK polls the upload until the approval lands, then generates a
+    /// fresh recovery key surfaced via `pendingRecoveryKey`.
+    public func finishResetIdentity() async {
+        guard let client, !isResettingIdentity else { return }
+        isResettingIdentity = true
+        recoveryErrorMessage = nil
+        do {
+            let key = try await client.finishResetIdentity()
+            resetIdentityApprovalUrl = nil
+            pendingRecoveryKey = key
+            recoveryState = await client.recoveryState()
+        } catch {
+            recoveryErrorMessage = error.displayMessage
+            recoveryState = await client.recoveryState()
+        }
+        isResettingIdentity = false
+    }
+
+    /// Cancel an in-progress identity reset. Safe to call when no reset is
+    /// pending. Clears the approval URL so the UI dismisses its sheet.
+    public func cancelResetIdentity() async {
+        guard let client else {
+            resetIdentityApprovalUrl = nil
+            return
+        }
+        await client.cancelResetIdentity()
+        resetIdentityApprovalUrl = nil
+        isResettingIdentity = false
     }
 
     /// Push the current displayName/avatarUrl into the memberProfiles cache

@@ -1461,4 +1461,96 @@ struct AppStateTests {
         #expect(appState.isLoggedIn == false)
         #expect(mock.logoutCalls == 1)
     }
+
+    // MARK: - Identity reset
+
+    @Test("beginResetIdentity stores approval URL when server requires approval")
+    mutating func beginResetIdentityStoresApprovalUrl() async {
+        mock.beginResetIdentityResult = "https://mas.example.com/approve?nonce=x"
+
+        await appState.beginResetIdentity()
+
+        #expect(appState.resetIdentityApprovalUrl == "https://mas.example.com/approve?nonce=x")
+        #expect(appState.isResettingIdentity == false)
+        #expect(mock.beginResetIdentityCalls == 1)
+        #expect(mock.finishResetIdentityCalls == 0)
+    }
+
+    @Test("beginResetIdentity finalises immediately when no approval needed")
+    mutating func beginResetIdentityAutoFinishes() async {
+        mock.beginResetIdentityResult = nil
+        mock.finishResetIdentityResult = "Es Tb FRESH KEY"
+        mock.recoveryStateResult = .enabled
+
+        await appState.beginResetIdentity()
+
+        #expect(appState.resetIdentityApprovalUrl == nil)
+        #expect(appState.pendingRecoveryKey == "Es Tb FRESH KEY")
+        #expect(appState.recoveryState == .enabled)
+        #expect(mock.beginResetIdentityCalls == 1)
+        #expect(mock.finishResetIdentityCalls == 1)
+    }
+
+    @Test("beginResetIdentity surfaces errors without leaving a stuck flag")
+    mutating func beginResetIdentityErrorClearsFlag() async {
+        mock.beginResetIdentityError = TestError()
+
+        await appState.beginResetIdentity()
+
+        #expect(appState.resetIdentityApprovalUrl == nil)
+        #expect(appState.isResettingIdentity == false)
+        #expect(appState.recoveryErrorMessage != nil)
+    }
+
+    @Test("finishResetIdentity surfaces the fresh key and clears the approval URL")
+    mutating func finishResetIdentitySurfacesKey() async {
+        appState.resetIdentityApprovalUrl = "https://mas.example.com/approve"
+        mock.finishResetIdentityResult = "Es Tb FRESH KEY"
+        mock.recoveryStateResult = .enabled
+
+        await appState.finishResetIdentity()
+
+        #expect(appState.pendingRecoveryKey == "Es Tb FRESH KEY")
+        #expect(appState.resetIdentityApprovalUrl == nil)
+        #expect(appState.recoveryState == .enabled)
+        #expect(appState.isResettingIdentity == false)
+        #expect(mock.finishResetIdentityCalls == 1)
+    }
+
+    @Test("finishResetIdentity keeps approval URL on failure so the user can retry")
+    mutating func finishResetIdentityFailureKeepsApprovalUrl() async {
+        appState.resetIdentityApprovalUrl = "https://mas.example.com/approve"
+        mock.finishResetIdentityError = TestError()
+        mock.recoveryStateResult = .incomplete
+
+        await appState.finishResetIdentity()
+
+        #expect(appState.pendingRecoveryKey == nil)
+        #expect(appState.resetIdentityApprovalUrl == "https://mas.example.com/approve")
+        #expect(appState.isResettingIdentity == false)
+        #expect(appState.recoveryErrorMessage != nil)
+    }
+
+    @Test("cancelResetIdentity clears approval URL and calls through to client")
+    mutating func cancelResetIdentityClearsState() async {
+        appState.resetIdentityApprovalUrl = "https://mas.example.com/approve"
+        appState.isResettingIdentity = true
+
+        await appState.cancelResetIdentity()
+
+        #expect(appState.resetIdentityApprovalUrl == nil)
+        #expect(appState.isResettingIdentity == false)
+        #expect(mock.cancelResetIdentityCalls == 1)
+    }
+
+    @Test("logout clears reset identity state")
+    mutating func logoutClearsResetIdentityState() async {
+        appState.resetIdentityApprovalUrl = "https://mas.example.com/approve"
+        appState.isResettingIdentity = true
+
+        await appState.logout()
+
+        #expect(appState.resetIdentityApprovalUrl == nil)
+        #expect(appState.isResettingIdentity == false)
+    }
 }
