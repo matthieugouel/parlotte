@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import ParlotteSDK
 @testable import ParlotteLib
@@ -28,7 +29,9 @@ struct AppStateNotificationTests {
     init() async {
         mock = MockMatrixClient()
         dispatcher = MockNotificationDispatcher()
-        appState = AppState(profile: "test-notifications")
+        // Unique profile per test so UserDefaults writes (e.g. notificationsEnabled)
+        // don't leak into sibling tests when Swift Testing runs them in parallel.
+        appState = AppState(profile: "test-notifications-\(UUID().uuidString)")
         appState.loggedInUserId = "@alice:example.com"
         appState.client = mock
         appState.notificationDispatcher = dispatcher

@@ -20,13 +20,11 @@ pub fn init_logging(level: String) {
 use parlotte_core::{
     EmojiInfo as CoreEmojiInfo, LoginMethods as CoreLoginMethods,
     MatrixSessionData as CoreMatrixSessionData, MessageBatch as CoreMessageBatch,
-    OidcSessionData as CoreOidcSessionData,
-    MessageInfo as CoreMessageInfo, ParlotteClient as CoreClient, ParlotteError as CoreError,
-    PublicRoomInfo as CorePublicRoomInfo, ReactionInfo as CoreReactionInfo,
-    RecoveryState as CoreRecoveryState, RoomInfo as CoreRoomInfo,
+    MessageInfo as CoreMessageInfo, OidcSessionData as CoreOidcSessionData,
+    ParlotteClient as CoreClient, ParlotteError as CoreError, PublicRoomInfo as CorePublicRoomInfo,
+    ReactionInfo as CoreReactionInfo, RecoveryState as CoreRecoveryState, RoomInfo as CoreRoomInfo,
     RoomMemberInfo as CoreRoomMemberInfo, SessionChangeEvent as CoreSessionChangeEvent,
-    SessionInfo as CoreSessionInfo,
-    SsoProvider as CoreSsoProvider, UserProfile as CoreUserProfile,
+    SessionInfo as CoreSessionInfo, SsoProvider as CoreSsoProvider, UserProfile as CoreUserProfile,
     VerificationRequestInfo as CoreVerificationRequestInfo,
     VerificationState as CoreVerificationState,
 };
@@ -703,17 +701,11 @@ impl ParlotteClientFFI {
         self.inner.oidc_session().map(Into::into)
     }
 
-    pub fn oidc_restore_session(
-        &self,
-        session_data: OidcSessionData,
-    ) -> Result<(), ParlotteError> {
+    pub fn oidc_restore_session(&self, session_data: OidcSessionData) -> Result<(), ParlotteError> {
         Ok(self.inner.oidc_restore_session(session_data.into())?)
     }
 
-    pub fn set_session_change_listener(
-        &self,
-        listener: Box<dyn ParlotteSessionChangeListener>,
-    ) {
+    pub fn set_session_change_listener(&self, listener: Box<dyn ParlotteSessionChangeListener>) {
         self.inner
             .set_session_change_listener(Arc::new(SessionChangeListenerBridge { inner: listener }));
     }

@@ -1,19 +1,24 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
+// Point Swift Testing at the Xcode toolchain's Testing.framework (which matches
+// the macros emitted by the current swift compiler). The CommandLineTools copy
+// is often stale and triggers `__uncheckedFileID` / `fileID` init mismatches.
+let xcodeFrameworksPath = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks"
+
 let testingFlags: [SwiftSetting] = [
     .swiftLanguageMode(.v5),
     .unsafeFlags([
-        "-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-F", xcodeFrameworksPath,
     ]),
 ]
 
 let testingLinkerFlags: [LinkerSetting] = [
     .unsafeFlags([
-        "-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-F", xcodeFrameworksPath,
         "-framework", "Testing",
         "-Xlinker", "-rpath",
-        "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-Xlinker", xcodeFrameworksPath,
     ]),
 ]
 

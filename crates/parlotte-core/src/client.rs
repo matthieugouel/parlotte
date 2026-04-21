@@ -2,16 +2,14 @@ use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::authentication::oauth::registration::{
     ApplicationType, ClientMetadata, Localized, OAuthGrantType,
 };
-use matrix_sdk::authentication::oauth::{
-    ClientId, OAuthSession, UrlOrQuery, UserSession,
-};
+use matrix_sdk::authentication::oauth::{ClientId, OAuthSession, UrlOrQuery, UserSession};
 use matrix_sdk::encryption::recovery::IdentityResetHandle;
 use matrix_sdk::encryption::CrossSigningResetAuthType;
 use matrix_sdk::room::MessagesOptions;
 use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
 use matrix_sdk::ruma::events::AnySyncTimelineEvent;
-use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use matrix_sdk::ruma::serde::Raw;
+use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use matrix_sdk::store::RoomLoadSettings;
 use matrix_sdk::{Client, SessionMeta, SessionTokens};
 use std::sync::Arc;
@@ -269,9 +267,18 @@ impl ParlotteClient {
 
             let data = client
                 .oauth()
-                .login(redirect, None, Some(Raw::new(&metadata).map_err(|e| {
-                    ParlotteError::Auth { message: format!("failed to serialize client metadata: {e}") }
-                })?.into()), None)
+                .login(
+                    redirect,
+                    None,
+                    Some(
+                        Raw::new(&metadata)
+                            .map_err(|e| ParlotteError::Auth {
+                                message: format!("failed to serialize client metadata: {e}"),
+                            })?
+                            .into(),
+                    ),
+                    None,
+                )
                 .build()
                 .await
                 .map_err(|e| ParlotteError::Auth {
@@ -1523,11 +1530,14 @@ impl ParlotteClient {
         let client = self.client();
         let active_reset = self.active_reset.clone();
         self.runtime.block_on(async move {
-            let handle = client.encryption().recovery().reset_identity().await.map_err(|e| {
-                ParlotteError::Unknown {
+            let handle = client
+                .encryption()
+                .recovery()
+                .reset_identity()
+                .await
+                .map_err(|e| ParlotteError::Unknown {
                     message: format!("failed to start identity reset: {e}"),
-                }
-            })?;
+                })?;
 
             let Some(handle) = handle else {
                 // No auth required — the SDK already cleared the old backup
@@ -1571,12 +1581,9 @@ impl ParlotteClient {
             // out of the slot so a cancellation during `reset(..)` doesn't
             // leave a stale handle behind.
             if let Some(handle) = active_reset.lock().await.take() {
-                handle
-                    .reset(None)
-                    .await
-                    .map_err(|e| ParlotteError::Auth {
-                        message: format!("identity reset failed: {e}"),
-                    })?;
+                handle.reset(None).await.map_err(|e| ParlotteError::Auth {
+                    message: format!("identity reset failed: {e}"),
+                })?;
             }
 
             // Reset succeeded (or wasn't needed). Generate a fresh recovery
