@@ -6,8 +6,10 @@ import SwiftUI
 @main
 struct ParlotteApp: App {
     @State private var appState: AppState
+    #if DEBUG
     /// Retained so the listener stays alive for the lifetime of the app.
     private static var debugServer: DebugServer?
+    #endif
     /// Retained so the UNUserNotificationCenter delegate isn't released mid-flight.
     private static var notificationDispatcher: LocalNotificationDispatcher?
 
@@ -28,6 +30,7 @@ struct ParlotteApp: App {
         Self.notificationDispatcher = dispatcher
         Task { _ = await dispatcher.requestAuthorization() }
 
+        #if DEBUG
         if let port = Self.parseDebugIpcPort() {
             // Generate a per-session bearer token and surface it on stderr.
             // Without this, any local process (or a DNS-rebinding web page)
@@ -43,6 +46,7 @@ struct ParlotteApp: App {
                 FileHandle.standardError.write(Data("Failed to start debug IPC server on port \(port): \(error)\n".utf8))
             }
         }
+        #endif
 
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
@@ -80,6 +84,7 @@ struct ParlotteApp: App {
         return raw
     }
 
+    #if DEBUG
     private static func parseDebugIpcPort() -> UInt16? {
         let args = CommandLine.arguments
         if let idx = args.firstIndex(of: "--debug-ipc-port"), idx + 1 < args.count {
@@ -87,6 +92,7 @@ struct ParlotteApp: App {
         }
         return nil
     }
+    #endif
 }
 
 extension AppearanceMode {

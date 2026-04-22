@@ -1,3 +1,4 @@
+#if DEBUG
 import Testing
 import ParlotteSDK
 @testable import ParlotteLib
@@ -259,3 +260,4 @@ struct DebugServerAuthTests {
         #expect(status == 200)
     }
 }
+#endif

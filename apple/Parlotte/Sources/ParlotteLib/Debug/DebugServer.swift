@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 import Network
 import ParlotteSDK
@@ -681,3 +682,4 @@ public struct DebugClient: Sendable {
         (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
     }
 }
+#endif
