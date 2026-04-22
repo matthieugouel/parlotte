@@ -9,14 +9,20 @@ import ParlotteSDK
 /// - `POST /cmd`  — invoke a command (`{"op": "...", ...args}`) against `AppState`
 ///
 /// Intended to be opt-in via the `--debug-ipc-port` CLI flag. Not suitable for
-/// production. Binds to the loopback interface only.
+/// production. Binds to the loopback interface only and requires a
+/// bearer-token `Authorization` header — without it any local process (or a
+/// DNS-rebinding web page) could read the recovery key or drive cross-signing.
 public final class DebugServer: @unchecked Sendable {
     private let appState: AppState
     private let queue = DispatchQueue(label: "parlotte.debug-ipc")
     private var listener: NWListener?
+    /// Required bearer token for every request. Empty string disables auth
+    /// (only used by the test suite, which supplies its own `DebugClient`).
+    private let authToken: String
 
-    public init(appState: AppState) {
+    public init(appState: AppState, authToken: String = "") {
         self.appState = appState
+        self.authToken = authToken
     }
 
     /// Start listening on `127.0.0.1:port`. Pass `0` for an OS-assigned port.
@@ -111,9 +117,30 @@ public final class DebugServer: @unchecked Sendable {
     private func dispatch(request: HTTPRequest, connection: NWConnection) {
         Task { [weak self] in
             guard let self else { connection.cancel(); return }
+            if !self.isAuthorized(request) {
+                self.respond(connection, status: 401, body: Self.errorBody("unauthorized"))
+                return
+            }
             let (status, body) = await self.handle(request)
             self.respond(connection, status: status, body: body)
         }
+    }
+
+    /// Constant-time comparison of the `Authorization: Bearer <token>`
+    /// header against the token generated at startup. When `authToken` is
+    /// empty (test-only), anything goes.
+    private func isAuthorized(_ request: HTTPRequest) -> Bool {
+        guard !authToken.isEmpty else { return true }
+        guard let header = request.headers["authorization"] else { return false }
+        let prefix = "Bearer "
+        guard header.hasPrefix(prefix) else { return false }
+        let actual = String(header.dropFirst(prefix.count))
+        let a = Array(actual.utf8)
+        let e = Array(authToken.utf8)
+        guard a.count == e.count else { return false }
+        var diff: UInt8 = 0
+        for i in 0..<a.count { diff |= a[i] ^ e[i] }
+        return diff == 0
     }
 
     private func respond(_ connection: NWConnection, status: Int, body: Data) {
@@ -353,7 +380,7 @@ public final class DebugServer: @unchecked Sendable {
             let data = try JSONEncoder.debug.encode(value)
             return (200, data)
         } catch {
-            return (500, Self.errorBody("encode failed: \(error)"))
+            return (500, Self.errorBody("encode failed"))
         }
     }
 
@@ -367,7 +394,9 @@ public final class DebugServer: @unchecked Sendable {
     private static func errorBody(_ message: String) -> Data {
         let payload: [String: Any] = ["ok": false, "error": message]
         return (try? JSONSerialization.data(withJSONObject: payload))
-            ?? Data("{\"ok\":false,\"error\":\"\(message)\"}".utf8)
+            // Static fallback — interpolating `message` here would let a
+            // quote/newline inside it produce invalid JSON.
+            ?? Data(#"{"ok":false,"error":"serialization failed"}"#.utf8)
     }
 
     // MARK: - HTTP parsing
@@ -375,6 +404,7 @@ public final class DebugServer: @unchecked Sendable {
     struct HTTPRequest {
         let method: String
         let path: String
+        let headers: [String: String]
         let body: Data
     }
 
@@ -393,12 +423,14 @@ public final class DebugServer: @unchecked Sendable {
         let method = String(parts[0])
         let path = String(parts[1])
 
-        // Parse Content-Length
+        var headers: [String: String] = [:]
         var contentLength = 0
         for line in lines.dropFirst() {
-            let lower = line.lowercased()
-            if lower.hasPrefix("content-length:") {
-                let value = line.dropFirst("content-length:".count).trimmingCharacters(in: .whitespaces)
+            guard let sep = line.firstIndex(of: ":") else { continue }
+            let name = line[..<sep].lowercased()
+            let value = line[line.index(after: sep)...].trimmingCharacters(in: .whitespaces)
+            headers[name] = value
+            if name == "content-length" {
                 contentLength = Int(value) ?? 0
             }
         }
@@ -409,7 +441,7 @@ public final class DebugServer: @unchecked Sendable {
             return nil // need more data
         }
         let body = data.subdata(in: bodyStart..<(bodyStart + contentLength))
-        return HTTPRequest(method: method, path: path, body: body)
+        return HTTPRequest(method: method, path: path, headers: headers, body: body)
     }
 
     private static func reasonPhrase(for status: Int) -> String {
@@ -603,25 +635,27 @@ extension JSONEncoder {
 /// a Foundation-free surface.
 public struct DebugClient: Sendable {
     public let baseURL: URL
+    public let authToken: String?
 
-    public init(port: UInt16) {
+    public init(port: UInt16, authToken: String? = nil) {
         self.baseURL = URL(string: "http://127.0.0.1:\(port)")!
+        self.authToken = authToken
     }
 
     public func get(_ path: String) async throws -> (status: Int, body: [String: Any]) {
-        let (data, response) = try await URLSession.shared.data(from: url(path))
+        let (data, response) = try await URLSession.shared.data(for: request(url(path), method: "GET", body: nil))
         return (Self.statusCode(response), Self.decodeJSON(data))
     }
 
     public func post(_ path: String, body: [String: Any]) async throws -> (status: Int, body: [String: Any]) {
         let payload = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await URLSession.shared.data(for: Self.request(url(path), method: "POST", body: payload))
+        let (data, response) = try await URLSession.shared.data(for: request(url(path), method: "POST", body: payload))
         return (Self.statusCode(response), Self.decodeJSON(data))
     }
 
     /// Post a raw string body. Used to test malformed-JSON handling.
     public func postText(_ path: String, text: String) async throws -> Int {
-        let (_, response) = try await URLSession.shared.data(for: Self.request(url(path), method: "POST", body: Data(text.utf8)))
+        let (_, response) = try await URLSession.shared.data(for: request(url(path), method: "POST", body: Data(text.utf8)))
         return Self.statusCode(response)
     }
 
@@ -629,10 +663,13 @@ public struct DebugClient: Sendable {
         baseURL.appendingPathComponent(path)
     }
 
-    private static func request(_ url: URL, method: String, body: Data?) -> URLRequest {
+    private func request(_ url: URL, method: String, body: Data?) -> URLRequest {
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.httpBody = body
+        if let token = authToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         return req
     }
 

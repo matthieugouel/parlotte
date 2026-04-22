@@ -4,13 +4,28 @@ import Network
 /// A minimal local HTTP server that listens for a single SSO callback request.
 /// The SSO provider redirects the browser to `http://localhost:<port>?loginToken=...`
 /// and this server captures that URL, returns a success page, then shuts down.
+///
+/// The listener binds to the loopback interface only, and the caller supplies a
+/// random `state` parameter which must appear verbatim in the callback query —
+/// any attacker-controlled request missing or mismatching `state` is rejected.
 actor SsoCallbackServer {
     private var listener: NWListener?
     private var continuation: CheckedContinuation<String, Error>?
+    private let expectedState: String
 
-    /// Start listening on a random available port. Returns the port number.
+    /// `expectedState` is verified against the `state` query parameter on the
+    /// callback. Use a cryptographically random value (see `AppState`).
+    init(expectedState: String) {
+        self.expectedState = expectedState
+    }
+
+    /// Start listening on a random available loopback port. Returns the port.
     func start() throws -> UInt16 {
-        let listener = try NWListener(using: .tcp, on: .any)
+        // Pin the listener to the loopback interface so nothing on the LAN /
+        // VPN / Tailscale can race the browser to our callback port.
+        let params = NWParameters.tcp
+        params.requiredInterfaceType = .loopback
+        let listener = try NWListener(using: params, on: .any)
         self.listener = listener
 
         let port: UInt16 = try {
@@ -86,6 +101,21 @@ actor SsoCallbackServer {
             let path = String(parts[1])
             let callbackUrl = "http://localhost\(path)"
 
+            // Reject any callback that doesn't carry the state we issued.
+            // Without this, a local process that guesses (or scans) the port
+            // could POST its own `loginToken` and trick us into signing into
+            // the attacker's account.
+            guard Self.hasMatchingState(in: callbackUrl, expected: self.expectedState) else {
+                let body = "invalid state"
+                let deny = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: \(body.utf8.count)\r\n\r\n\(body)"
+                connection.send(content: deny.data(using: .utf8), completion: .contentProcessed { _ in
+                    connection.cancel()
+                })
+                // Keep listening — the legitimate browser redirect may still
+                // arrive after a curious scanner pokes the port.
+                return
+            }
+
             // Send a success response to the browser
             let html = """
             <html><body style="font-family: -apple-system, sans-serif; text-align: center; padding-top: 100px;">
@@ -115,5 +145,24 @@ actor SsoCallbackServer {
         listener = nil
         continuation?.resume(throwing: error)
         continuation = nil
+    }
+
+    /// Constant-time check that the callback URL's `state` query parameter
+    /// matches the value we issued. The comparison is done on the parsed
+    /// query items, so the order of parameters in the URL doesn't matter.
+    private static func hasMatchingState(in callbackUrl: String, expected: String) -> Bool {
+        guard let components = URLComponents(string: callbackUrl),
+              let items = components.queryItems else { return false }
+        guard let actual = items.first(where: { $0.name == "state" })?.value else {
+            return false
+        }
+        // Constant-time comparison to avoid timing side channels against a
+        // secret, even though the window is short.
+        let a = Array(actual.utf8)
+        let e = Array(expected.utf8)
+        guard a.count == e.count else { return false }
+        var diff: UInt8 = 0
+        for i in 0..<a.count { diff |= a[i] ^ e[i] }
+        return diff == 0
     }
 }

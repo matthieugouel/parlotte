@@ -71,6 +71,12 @@
   - [x] Post-login prompt when `RecoveryState::Incomplete` (new device)
   - [x] `is_last_device` warning before logout
   - [x] Reset recovery from this device (lost-key path)
+- [x] Hardening pass (2026-04)
+  - [x] Access + refresh tokens moved from UserDefaults to Keychain (legacy plaintext auto-migrated and wiped)
+  - [x] HTML sanitiser on message formatted bodies (blocks `<img>`/`<iframe>`/`<script>`/`<style>`, `on*=` handlers, `javascript:`/`data:` hrefs) — stops arbitrary senders triggering network fetches via NSAttributedString
+  - [x] SSO callback server binds loopback-only and validates CSRF state parameter with constant-time compare
+  - [x] Debug IPC server requires bearer token (random per launch, printed to stderr); refuses requests without it
+  - [x] `--profile` input validated (`[A-Za-z0-9_-]{1,64}`) before it's used in filesystem paths
 
 ## Testing
 - [x] Unit tests for input validation and error paths (parlotte-core)

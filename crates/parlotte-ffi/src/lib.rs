@@ -429,9 +429,6 @@ struct VerificationListenerBridge {
     inner: Box<dyn ParlotteVerificationListener>,
 }
 
-unsafe impl Send for VerificationListenerBridge {}
-unsafe impl Sync for VerificationListenerBridge {}
-
 impl parlotte_core::VerificationListener for VerificationListenerBridge {
     fn on_verification_request(&self, info: CoreVerificationRequestInfo) {
         self.inner.on_verification_request(info.into());
@@ -450,10 +447,6 @@ pub trait ParlotteSyncListener: Send + Sync {
 struct SyncListenerBridge {
     inner: Box<dyn ParlotteSyncListener>,
 }
-
-// Safety: ParlotteSyncListener requires Send + Sync
-unsafe impl Send for SyncListenerBridge {}
-unsafe impl Sync for SyncListenerBridge {}
 
 impl parlotte_core::SyncListener for SyncListenerBridge {
     fn on_sync_update(&self) {
@@ -501,9 +494,6 @@ pub trait ParlotteSessionChangeListener: Send + Sync {
 struct SessionChangeListenerBridge {
     inner: Box<dyn ParlotteSessionChangeListener>,
 }
-
-unsafe impl Send for SessionChangeListenerBridge {}
-unsafe impl Sync for SessionChangeListenerBridge {}
 
 impl parlotte_core::SessionChangeListener for SessionChangeListenerBridge {
     fn on_session_change(&self, event: CoreSessionChangeEvent) {

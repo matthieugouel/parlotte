@@ -218,3 +218,44 @@ struct DebugServerTests {
         #expect(status == 404)
     }
 }
+
+@MainActor
+@Suite("DebugServer auth")
+struct DebugServerAuthTests {
+    @Test("Requests without bearer token are rejected with 401")
+    func missingTokenRejected() async throws {
+        let state = AppState(profile: "debug-auth-missing")
+        state.client = MockMatrixClient()
+        let server = DebugServer(appState: state, authToken: "correct-horse-battery-staple")
+        let port = try server.start(port: 0)
+        defer { server.stop() }
+        let client = DebugClient(port: port) // no token
+        let (status, _) = try await client.get("/state")
+        #expect(status == 401)
+    }
+
+    @Test("Requests with the wrong token are rejected with 401")
+    func wrongTokenRejected() async throws {
+        let state = AppState(profile: "debug-auth-wrong")
+        state.client = MockMatrixClient()
+        let server = DebugServer(appState: state, authToken: "correct-horse")
+        let port = try server.start(port: 0)
+        defer { server.stop() }
+        let client = DebugClient(port: port, authToken: "different")
+        let (status, _) = try await client.get("/state")
+        #expect(status == 401)
+    }
+
+    @Test("Requests with the correct token are accepted")
+    func correctTokenAccepted() async throws {
+        let state = AppState(profile: "debug-auth-ok")
+        state.client = MockMatrixClient()
+        let token = "correct-horse"
+        let server = DebugServer(appState: state, authToken: token)
+        let port = try server.start(port: 0)
+        defer { server.stop() }
+        let client = DebugClient(port: port, authToken: token)
+        let (status, _) = try await client.get("/state")
+        #expect(status == 200)
+    }
+}

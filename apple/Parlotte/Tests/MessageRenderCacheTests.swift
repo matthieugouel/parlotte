@@ -49,3 +49,68 @@ struct MessageRenderCacheTests {
         #expect(String(b!.characters).contains("second"))
     }
 }
+
+@Suite("HtmlSanitizer")
+struct HtmlSanitizerTests {
+    @Test("Strips <img> — NSAttributedString would fetch src")
+    func stripsImg() {
+        let out = HtmlSanitizer.sanitize(#"hi <img src="https://evil/ping"> there"#)
+        #expect(!out.lowercased().contains("<img"))
+        #expect(!out.contains("evil"))
+    }
+
+    @Test("Strips <script> and its contents")
+    func stripsScriptBlock() {
+        let out = HtmlSanitizer.sanitize("before<script>alert(1)</script>after")
+        #expect(!out.lowercased().contains("<script"))
+        #expect(!out.contains("alert"))
+        #expect(out.contains("before"))
+        #expect(out.contains("after"))
+    }
+
+    @Test("Strips <style>, <iframe>, <svg>, <link>, <meta>")
+    func stripsOtherRiskyTags() {
+        let cases = [
+            #"x<style>@import 'https://evil/'</style>y"#,
+            #"x<iframe src="https://evil"></iframe>y"#,
+            #"x<svg><image href="https://evil"/></svg>y"#,
+            #"x<link rel="stylesheet" href="https://evil">y"#,
+            #"x<meta http-equiv="refresh" content="0;url=https://evil">y"#,
+        ]
+        for input in cases {
+            let out = HtmlSanitizer.sanitize(input)
+            #expect(!out.contains("evil"), "leaked `evil` from: \(input) -> \(out)")
+            #expect(out.contains("x") && out.contains("y"))
+        }
+    }
+
+    @Test("Keeps allowed tags")
+    func keepsAllowedTags() {
+        let input = "<strong>bold</strong> <em>em</em> <code>c</code>"
+        let out = HtmlSanitizer.sanitize(input).lowercased()
+        #expect(out.contains("<strong>"))
+        #expect(out.contains("<em>"))
+        #expect(out.contains("<code>"))
+    }
+
+    @Test("Strips on* event handlers")
+    func stripsEventHandlers() {
+        let out = HtmlSanitizer.sanitize(#"<a href="https://ok" onclick="x()">hi</a>"#)
+        #expect(!out.contains("onclick"))
+        #expect(out.contains("https://ok"))
+    }
+
+    @Test("Neutralises javascript: hrefs")
+    func neutralisesJavascriptHrefs() {
+        let out = HtmlSanitizer.sanitize(#"<a href="javascript:alert(1)">click</a>"#)
+        #expect(!out.lowercased().contains("javascript:"))
+        #expect(out.contains("#"))
+    }
+
+    @Test("Strips unknown tags but keeps inner text")
+    func dropsUnknownTagsKeepsText() {
+        let out = HtmlSanitizer.sanitize("<foo>keep me</foo>")
+        #expect(!out.contains("<foo>"))
+        #expect(out.contains("keep me"))
+    }
+}

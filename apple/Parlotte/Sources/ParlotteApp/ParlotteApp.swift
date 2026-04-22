@@ -29,13 +29,18 @@ struct ParlotteApp: App {
         Task { _ = await dispatcher.requestAuthorization() }
 
         if let port = Self.parseDebugIpcPort() {
-            let server = DebugServer(appState: state)
+            // Generate a per-session bearer token and surface it on stderr.
+            // Without this, any local process (or a DNS-rebinding web page)
+            // could drive the IPC to read `pendingRecoveryKey` or confirm
+            // SAS verification on the user's behalf.
+            let token = AppState.randomToken(byteCount: 24)
+            let server = DebugServer(appState: state, authToken: token)
             do {
                 try server.start(port: port)
                 Self.debugServer = server
-                print("Debug IPC server listening on 127.0.0.1:\(port)")
+                FileHandle.standardError.write(Data("Debug IPC listening on 127.0.0.1:\(port) (token: \(token))\n".utf8))
             } catch {
-                print("Failed to start debug IPC server on port \(port): \(error)")
+                FileHandle.standardError.write(Data("Failed to start debug IPC server on port \(port): \(error)\n".utf8))
             }
         }
 
@@ -56,10 +61,23 @@ struct ParlotteApp: App {
 
     private static func parseProfile() -> String {
         let args = CommandLine.arguments
-        if let idx = args.firstIndex(of: "--profile"), idx + 1 < args.count {
-            return args[idx + 1]
+        guard let idx = args.firstIndex(of: "--profile"), idx + 1 < args.count else {
+            return "default"
         }
-        return "default"
+        let raw = args[idx + 1]
+        // The profile string becomes both a filesystem path component
+        // (`~/.../Parlotte/<profile>`) and a UserDefaults key prefix. Reject
+        // anything outside a conservative allowlist so `../` or `.` can't
+        // escape the store dir or collide keys across profiles.
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+        let valid = !raw.isEmpty
+            && raw.count <= 64
+            && raw.unicodeScalars.allSatisfy { allowed.contains($0) }
+        if !valid {
+            FileHandle.standardError.write(Data("Invalid --profile: must match [A-Za-z0-9_-]{1,64}\n".utf8))
+            exit(2)
+        }
+        return raw
     }
 
     private static func parseDebugIpcPort() -> UInt16? {

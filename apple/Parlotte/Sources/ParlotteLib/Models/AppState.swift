@@ -201,10 +201,20 @@ public final class AppState {
             let client = try MatrixClient(homeserverURL: homeserverURL, storePath: storePath)
             self.client = client
 
-            // Start a local HTTP server to receive the SSO callback
-            let server = SsoCallbackServer()
+            // Random state parameter binds the browser redirect back to this
+            // login attempt — anything that tries to deliver a callback
+            // without it is rejected by `SsoCallbackServer`.
+            let ssoState = Self.randomToken(byteCount: 32)
+            let server = SsoCallbackServer(expectedState: ssoState)
             let port = try await server.start()
-            let redirectUrl = "http://localhost:\(port)"
+            var redirectComponents = URLComponents()
+            redirectComponents.scheme = "http"
+            redirectComponents.host = "localhost"
+            redirectComponents.port = Int(port)
+            redirectComponents.queryItems = [URLQueryItem(name: "state", value: ssoState)]
+            guard let redirectUrl = redirectComponents.url?.absoluteString else {
+                throw OidcAuthError.noCallback
+            }
 
             let ssoUrl = try await client.ssoLoginUrl(redirectUrl: redirectUrl, idpId: idpId)
 
@@ -1318,20 +1328,34 @@ public final class AppState {
     private func saveSession(_ data: MatrixSessionData?, homeserverURL: String) {
         guard let data else { return }
         let d = Self.defaults
-        d.set(homeserverURL,    forKey: key("homeserver"))
-        d.set(data.userId,      forKey: key("userId"))
-        d.set(data.deviceId,    forKey: key("deviceId"))
-        d.set(data.accessToken, forKey: key("accessToken"))
+        d.set(homeserverURL, forKey: key("homeserver"))
+        d.set(data.userId,   forKey: key("userId"))
+        d.set(data.deviceId, forKey: key("deviceId"))
+        // Access token goes to the Keychain, not UserDefaults — it was
+        // previously plaintext under `~/Library/Containers/.../Preferences`.
+        ParlotteKeychain.set(data.accessToken, account: key("accessToken"))
+        d.removeObject(forKey: key("accessToken"))
     }
 
     private func loadSession() -> SavedSession? {
         let d = Self.defaults
         guard
-            let hs    = d.string(forKey: key("homeserver")),
-            let uid   = d.string(forKey: key("userId")),
-            let did   = d.string(forKey: key("deviceId")),
-            let token = d.string(forKey: key("accessToken"))
+            let hs  = d.string(forKey: key("homeserver")),
+            let uid = d.string(forKey: key("userId")),
+            let did = d.string(forKey: key("deviceId"))
         else { return nil }
+        // Prefer Keychain; fall back to UserDefaults once to migrate users who
+        // signed in before the Keychain switch, then clear the plaintext copy.
+        let token: String
+        if let kc = ParlotteKeychain.get(key("accessToken")) {
+            token = kc
+        } else if let legacy = d.string(forKey: key("accessToken")) {
+            ParlotteKeychain.set(legacy, account: key("accessToken"))
+            d.removeObject(forKey: key("accessToken"))
+            token = legacy
+        } else {
+            return nil
+        }
         return SavedSession(
             homeserverURL: hs,
             userId: uid,
@@ -1346,6 +1370,7 @@ public final class AppState {
         d.removeObject(forKey: key("userId"))
         d.removeObject(forKey: key("deviceId"))
         d.removeObject(forKey: key("accessToken"))
+        ParlotteKeychain.remove(key("accessToken"))
     }
 
     private struct SavedOidcSession {
@@ -1360,16 +1385,21 @@ public final class AppState {
     private func saveOidcSession(_ data: OidcSessionData?, homeserverURL: String) {
         guard let data else { return }
         let d = Self.defaults
-        d.set(homeserverURL,    forKey: key("oidc.homeserver"))
-        d.set(data.userId,      forKey: key("oidc.userId"))
-        d.set(data.deviceId,    forKey: key("oidc.deviceId"))
-        d.set(data.accessToken, forKey: key("oidc.accessToken"))
-        d.set(data.clientId,    forKey: key("oidc.clientId"))
+        d.set(homeserverURL, forKey: key("oidc.homeserver"))
+        d.set(data.userId,   forKey: key("oidc.userId"))
+        d.set(data.deviceId, forKey: key("oidc.deviceId"))
+        d.set(data.clientId, forKey: key("oidc.clientId"))
+        // Access + refresh tokens live in the Keychain. The OIDC refresh
+        // token is especially sensitive: it's long-lived and grants full
+        // account access without re-auth.
+        ParlotteKeychain.set(data.accessToken, account: key("oidc.accessToken"))
+        d.removeObject(forKey: key("oidc.accessToken"))
         if let refresh = data.refreshToken {
-            d.set(refresh, forKey: key("oidc.refreshToken"))
+            ParlotteKeychain.set(refresh, account: key("oidc.refreshToken"))
         } else {
-            d.removeObject(forKey: key("oidc.refreshToken"))
+            ParlotteKeychain.remove(key("oidc.refreshToken"))
         }
+        d.removeObject(forKey: key("oidc.refreshToken"))
     }
 
     private func loadOidcSession() -> SavedOidcSession? {
@@ -1378,15 +1408,34 @@ public final class AppState {
             let hs       = d.string(forKey: key("oidc.homeserver")),
             let uid      = d.string(forKey: key("oidc.userId")),
             let did      = d.string(forKey: key("oidc.deviceId")),
-            let token    = d.string(forKey: key("oidc.accessToken")),
             let clientId = d.string(forKey: key("oidc.clientId"))
         else { return nil }
+        let token: String
+        if let kc = ParlotteKeychain.get(key("oidc.accessToken")) {
+            token = kc
+        } else if let legacy = d.string(forKey: key("oidc.accessToken")) {
+            ParlotteKeychain.set(legacy, account: key("oidc.accessToken"))
+            d.removeObject(forKey: key("oidc.accessToken"))
+            token = legacy
+        } else {
+            return nil
+        }
+        let refresh: String?
+        if let kc = ParlotteKeychain.get(key("oidc.refreshToken")) {
+            refresh = kc
+        } else if let legacy = d.string(forKey: key("oidc.refreshToken")) {
+            ParlotteKeychain.set(legacy, account: key("oidc.refreshToken"))
+            d.removeObject(forKey: key("oidc.refreshToken"))
+            refresh = legacy
+        } else {
+            refresh = nil
+        }
         return SavedOidcSession(
             homeserverURL: hs,
             userId: uid,
             deviceId: did,
             accessToken: token,
-            refreshToken: d.string(forKey: key("oidc.refreshToken")),
+            refreshToken: refresh,
             clientId: clientId
         )
     }
@@ -1399,6 +1448,26 @@ public final class AppState {
         d.removeObject(forKey: key("oidc.accessToken"))
         d.removeObject(forKey: key("oidc.refreshToken"))
         d.removeObject(forKey: key("oidc.clientId"))
+        ParlotteKeychain.remove(key("oidc.accessToken"))
+        ParlotteKeychain.remove(key("oidc.refreshToken"))
+    }
+
+    // MARK: - Random token
+
+    /// Cryptographically-random URL-safe token of the given byte length,
+    /// hex-encoded. Used as the SSO `state` parameter and the debug-IPC
+    /// bearer token.
+    public static func randomToken(byteCount: Int) -> String {
+        var bytes = [UInt8](repeating: 0, count: byteCount)
+        let status = SecRandomCopyBytes(kSecRandomDefault, byteCount, &bytes)
+        if status != errSecSuccess {
+            // Fall back to Foundation's RNG, which is still seeded from the
+            // kernel. This path is effectively unreachable on macOS.
+            for i in 0..<byteCount {
+                bytes[i] = UInt8.random(in: 0...255)
+            }
+        }
+        return bytes.map { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: - Device verification
