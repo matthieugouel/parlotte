@@ -435,7 +435,7 @@ struct AppStateTests {
     @Test("Refresh rooms updates room list")
     mutating func refreshRoomsUpdatesRoomList() async {
         mock.roomsResult = [
-            RoomInfo(id: "!a:x.com", displayName: "Alpha", isEncrypted: false, isPublic: false, topic: nil, isInvited: false, unreadCount: 0),
+            RoomInfo(id: "!a:x.com", displayName: "Alpha", isEncrypted: false, isPublic: false, isDirect: false, topic: nil, isInvited: false, unreadCount: 0),
         ]
 
         await appState.refreshRooms()
@@ -448,8 +448,8 @@ struct AppStateTests {
     mutating func refreshRoomsZeroesUnreadOnSelectedRoom() async {
         appState.selectedRoomId = "!a:x.com"
         mock.roomsResult = [
-            RoomInfo(id: "!a:x.com", displayName: "Selected", isEncrypted: false, isPublic: false, topic: nil, isInvited: false, unreadCount: 5),
-            RoomInfo(id: "!b:x.com", displayName: "Other", isEncrypted: false, isPublic: false, topic: nil, isInvited: false, unreadCount: 3),
+            RoomInfo(id: "!a:x.com", displayName: "Selected", isEncrypted: false, isPublic: false, isDirect: false, topic: nil, isInvited: false, unreadCount: 5),
+            RoomInfo(id: "!b:x.com", displayName: "Other", isEncrypted: false, isPublic: false, isDirect: false, topic: nil, isInvited: false, unreadCount: 3),
         ]
 
         let hasNew = await appState.refreshRooms()
@@ -463,7 +463,7 @@ struct AppStateTests {
     mutating func refreshRoomsReturnsFalseWhenNoUnread() async {
         appState.selectedRoomId = "!a:x.com"
         mock.roomsResult = [
-            RoomInfo(id: "!a:x.com", displayName: "Selected", isEncrypted: false, isPublic: false, topic: nil, isInvited: false, unreadCount: 0),
+            RoomInfo(id: "!a:x.com", displayName: "Selected", isEncrypted: false, isPublic: false, isDirect: false, topic: nil, isInvited: false, unreadCount: 0),
         ]
 
         let hasNew = await appState.refreshRooms()
@@ -521,7 +521,7 @@ struct AppStateTests {
         appState.loggedInUserId = "@alice:example.com"
         appState.isSyncActive = true
         appState.rooms = [
-            RoomInfo(id: "!a:x.com", displayName: "Room", isEncrypted: false, isPublic: false, topic: nil, isInvited: false, unreadCount: 0),
+            RoomInfo(id: "!a:x.com", displayName: "Room", isEncrypted: false, isPublic: false, isDirect: false, topic: nil, isInvited: false, unreadCount: 0),
         ]
         appState.messages = [makeMessage()]
 
@@ -1084,6 +1084,7 @@ struct AppStateTests {
             displayName: "Original",
             isEncrypted: false,
             isPublic: true,
+            isDirect: false,
             topic: nil,
             isInvited: false,
             unreadCount: 0
@@ -1097,6 +1098,7 @@ struct AppStateTests {
             displayName: "Renamed",
             isEncrypted: false,
             isPublic: true,
+            isDirect: false,
             topic: nil,
             isInvited: false,
             unreadCount: 0
@@ -1233,7 +1235,7 @@ struct AppStateTests {
     mutating func updateRoomNameOptimistic() async {
         let roomId = "!room:example.com"
         appState.rooms = [
-            RoomInfo(id: roomId, displayName: "Old Name", isEncrypted: false, isPublic: false,
+            RoomInfo(id: roomId, displayName: "Old Name", isEncrypted: false, isPublic: false, isDirect: false,
                      topic: nil, isInvited: false, unreadCount: 0)
         ]
 
@@ -1250,7 +1252,7 @@ struct AppStateTests {
     mutating func updateRoomNameRevertsOnFailure() async {
         let roomId = "!room:example.com"
         appState.rooms = [
-            RoomInfo(id: roomId, displayName: "Old Name", isEncrypted: false, isPublic: false,
+            RoomInfo(id: roomId, displayName: "Old Name", isEncrypted: false, isPublic: false, isDirect: false,
                      topic: nil, isInvited: false, unreadCount: 0)
         ]
         mock.setRoomNameError = ParlotteError.Network(message: "nope")
@@ -1265,7 +1267,7 @@ struct AppStateTests {
     mutating func updateRoomNameIgnoresEmpty() async {
         let roomId = "!room:example.com"
         appState.rooms = [
-            RoomInfo(id: roomId, displayName: "Original", isEncrypted: false, isPublic: false,
+            RoomInfo(id: roomId, displayName: "Original", isEncrypted: false, isPublic: false, isDirect: false,
                      topic: nil, isInvited: false, unreadCount: 0)
         ]
 
@@ -1288,7 +1290,7 @@ struct AppStateTests {
     mutating func updateRoomTopicOptimistic() async {
         let roomId = "!room:example.com"
         appState.rooms = [
-            RoomInfo(id: roomId, displayName: "R", isEncrypted: false, isPublic: false,
+            RoomInfo(id: roomId, displayName: "R", isEncrypted: false, isPublic: false, isDirect: false,
                      topic: "Old topic", isInvited: false, unreadCount: 0)
         ]
 
@@ -1303,7 +1305,7 @@ struct AppStateTests {
     mutating func updateRoomTopicRevertsOnFailure() async {
         let roomId = "!room:example.com"
         appState.rooms = [
-            RoomInfo(id: roomId, displayName: "R", isEncrypted: false, isPublic: false,
+            RoomInfo(id: roomId, displayName: "R", isEncrypted: false, isPublic: false, isDirect: false,
                      topic: "Old topic", isInvited: false, unreadCount: 0)
         ]
         mock.setRoomTopicError = ParlotteError.Network(message: "fail")
@@ -1318,7 +1320,7 @@ struct AppStateTests {
     mutating func updateRoomTopicClears() async {
         let roomId = "!room:example.com"
         appState.rooms = [
-            RoomInfo(id: roomId, displayName: "R", isEncrypted: false, isPublic: false,
+            RoomInfo(id: roomId, displayName: "R", isEncrypted: false, isPublic: false, isDirect: false,
                      topic: "Stale", isInvited: false, unreadCount: 0)
         ]
 
@@ -1333,12 +1335,12 @@ struct AppStateTests {
     mutating func roomSettingsPropagateViaSync() async {
         let roomId = "!room:example.com"
         appState.rooms = [
-            RoomInfo(id: roomId, displayName: "Before", isEncrypted: false, isPublic: false,
+            RoomInfo(id: roomId, displayName: "Before", isEncrypted: false, isPublic: false, isDirect: false,
                      topic: "Before topic", isInvited: false, unreadCount: 0)
         ]
         // Simulate the server reflecting a rename + topic change in the next sync.
         mock.roomsResult = [
-            RoomInfo(id: roomId, displayName: "After", isEncrypted: false, isPublic: false,
+            RoomInfo(id: roomId, displayName: "After", isEncrypted: false, isPublic: false, isDirect: false,
                      topic: "After topic", isInvited: false, unreadCount: 0)
         ]
 

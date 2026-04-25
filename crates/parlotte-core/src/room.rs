@@ -9,6 +9,8 @@ pub struct RoomInfo {
     pub is_encrypted: bool,
     /// Whether the room is publicly joinable.
     pub is_public: bool,
+    /// Whether the room is a direct message (flagged via `m.direct`).
+    pub is_direct: bool,
     /// The topic of the room, if set.
     pub topic: Option<String>,
     /// Whether this is a pending invite (not yet joined).
@@ -58,6 +60,7 @@ mod tests {
             display_name: "Test Room".into(),
             is_encrypted: true,
             is_public: false,
+            is_direct: false,
             topic: Some("A topic".into()),
             is_invited: false,
             unread_count: 0,
@@ -66,6 +69,7 @@ mod tests {
         assert_eq!(room.display_name, "Test Room");
         assert!(room.is_encrypted);
         assert!(!room.is_public);
+        assert!(!room.is_direct);
         assert_eq!(room.topic.as_deref(), Some("A topic"));
         assert!(!room.is_invited);
     }
@@ -77,12 +81,14 @@ mod tests {
             display_name: "No Topic".into(),
             is_encrypted: false,
             is_public: true,
+            is_direct: true,
             topic: None,
             is_invited: false,
             unread_count: 0,
         };
         assert!(!room.is_encrypted);
         assert!(room.is_public);
+        assert!(room.is_direct);
         assert!(room.topic.is_none());
     }
 
@@ -93,6 +99,7 @@ mod tests {
             display_name: "Cloned".into(),
             is_encrypted: false,
             is_public: false,
+            is_direct: false,
             topic: None,
             is_invited: false,
             unread_count: 0,

@@ -10,6 +10,7 @@
 
 ## Rooms
 - [x] Room list with public/private/encrypted indicators
+- [x] Sidebar split between "Direct messages" and "Rooms" (Matrix `m.direct`)
 - [x] Create rooms (public or private)
 - [x] Private rooms encrypted by default (Megolm E2EE)
 - [x] Public room directory (explore and join)

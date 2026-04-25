@@ -77,6 +77,7 @@ pub struct RoomInfo {
     pub display_name: String,
     pub is_encrypted: bool,
     pub is_public: bool,
+    pub is_direct: bool,
     pub topic: Option<String>,
     pub is_invited: bool,
     pub unread_count: u64,
@@ -89,6 +90,7 @@ impl From<CoreRoomInfo> for RoomInfo {
             display_name: r.display_name,
             is_encrypted: r.is_encrypted,
             is_public: r.is_public,
+            is_direct: r.is_direct,
             topic: r.topic,
             is_invited: r.is_invited,
             unread_count: r.unread_count,
@@ -822,6 +824,7 @@ mod tests {
             display_name: "General".into(),
             is_encrypted: true,
             is_public: false,
+            is_direct: false,
             topic: Some("Welcome".into()),
             is_invited: false,
             unread_count: 42,
@@ -831,6 +834,7 @@ mod tests {
         assert_eq!(ffi.display_name, "General");
         assert!(ffi.is_encrypted);
         assert!(!ffi.is_public);
+        assert!(!ffi.is_direct);
         assert_eq!(ffi.topic.as_deref(), Some("Welcome"));
         assert!(!ffi.is_invited);
         assert_eq!(ffi.unread_count, 42);
@@ -843,6 +847,7 @@ mod tests {
             display_name: "No Topic".into(),
             is_encrypted: false,
             is_public: true,
+            is_direct: true,
             topic: None,
             is_invited: true,
             unread_count: 0,
@@ -850,6 +855,7 @@ mod tests {
         let ffi: RoomInfo = core.into();
         assert!(ffi.topic.is_none());
         assert!(ffi.is_public);
+        assert!(ffi.is_direct);
         assert!(ffi.is_invited);
     }
 

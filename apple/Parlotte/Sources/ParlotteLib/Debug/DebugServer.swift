@@ -476,6 +476,7 @@ struct DebugRoom: Encodable {
     let unreadCount: UInt64
     let isEncrypted: Bool
     let isPublic: Bool
+    let isDirect: Bool
     let isInvited: Bool
     let topic: String?
 
@@ -485,6 +486,7 @@ struct DebugRoom: Encodable {
         self.unreadCount = r.unreadCount
         self.isEncrypted = r.isEncrypted
         self.isPublic = r.isPublic
+        self.isDirect = r.isDirect
         self.isInvited = r.isInvited
         self.topic = r.topic
     }

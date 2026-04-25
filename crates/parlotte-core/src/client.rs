@@ -536,6 +536,7 @@ impl ParlotteClient {
                 );
 
                 let is_public = room.is_public().unwrap_or(false);
+                let is_direct = room.is_direct().await.unwrap_or(false);
 
                 let counts = room.unread_notification_counts();
                 let unread_count = if counts.notification_count > 0 {
@@ -549,6 +550,7 @@ impl ParlotteClient {
                     display_name,
                     is_encrypted,
                     is_public,
+                    is_direct,
                     topic,
                     is_invited: false,
                     unread_count,
@@ -569,12 +571,14 @@ impl ParlotteClient {
                 );
 
                 let is_public = room.is_public().unwrap_or(false);
+                let is_direct = room.is_direct().await.unwrap_or(false);
 
                 rooms.push(RoomInfo {
                     id: room.room_id().to_string(),
                     display_name,
                     is_encrypted,
                     is_public,
+                    is_direct,
                     topic,
                     is_invited: true,
                     unread_count: 0,

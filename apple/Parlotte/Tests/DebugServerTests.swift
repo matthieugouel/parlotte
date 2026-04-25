@@ -30,6 +30,7 @@ struct DebugServerTests {
             displayName: name,
             isEncrypted: false,
             isPublic: true,
+            isDirect: false,
             topic: nil,
             isInvited: false,
             unreadCount: 0

@@ -50,15 +50,36 @@ struct RoomListView: View {
 
             // Room list
             List(selection: $appState.selectedRoomId) {
-                ForEach(appState.rooms, id: \.id) { room in
-                    RoomRow(room: room, isSelected: room.id == appState.selectedRoomId)
-                        .tag(room.id)
-                        .listRowInsets(EdgeInsets(
-                            top: Spacing.xs,
-                            leading: Spacing.sm,
-                            bottom: Spacing.xs,
-                            trailing: Spacing.sm
-                        ))
+                let invites = appState.rooms.filter { $0.isInvited }
+                let directs = appState.rooms.filter { !$0.isInvited && $0.isDirect }
+                let rooms = appState.rooms.filter { !$0.isInvited && !$0.isDirect }
+
+                if !invites.isEmpty {
+                    Section("Invites") {
+                        ForEach(invites, id: \.id) { room in
+                            roomRow(room)
+                        }
+                    }
+                }
+
+                if !directs.isEmpty {
+                    Section("Direct messages") {
+                        ForEach(directs, id: \.id) { room in
+                            roomRow(room)
+                        }
+                    }
+                }
+
+                Section("Rooms") {
+                    if rooms.isEmpty {
+                        Text("No rooms yet")
+                            .font(.roomPreview)
+                            .foregroundStyle(AppColor.textTertiary)
+                    } else {
+                        ForEach(rooms, id: \.id) { room in
+                            roomRow(room)
+                        }
+                    }
                 }
             }
             .listStyle(.sidebar)
@@ -117,6 +138,18 @@ struct RoomListView: View {
             ExploreRoomsView()
                 .environment(appState)
         }
+    }
+
+    @ViewBuilder
+    private func roomRow(_ room: RoomInfo) -> some View {
+        RoomRow(room: room, isSelected: room.id == appState.selectedRoomId)
+            .tag(room.id)
+            .listRowInsets(EdgeInsets(
+                top: Spacing.xs,
+                leading: Spacing.sm,
+                bottom: Spacing.xs,
+                trailing: Spacing.sm
+            ))
     }
 
     private func localpart(from userId: String) -> String {

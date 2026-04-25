@@ -50,6 +50,7 @@ struct AppStateNotificationTests {
             displayName: name,
             isEncrypted: false,
             isPublic: false,
+            isDirect: false,
             topic: nil,
             isInvited: isInvited,
             unreadCount: unread
