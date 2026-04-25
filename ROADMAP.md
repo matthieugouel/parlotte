@@ -42,7 +42,7 @@
 - [x] Unread indicators / notification badges
 - [x] Read receipts (mark rooms as read)
 - [x] User profile (display name, avatar)
-- [ ] Avatar upload from profile view (core already has `upload_avatar`; wire it into ProfileView)
+- [x] Avatar upload from profile view
 - [x] Light & dark mode
 - [x] Design system (spacing tokens, semantic colors, typography scale)
 - [x] Message grouping (consecutive same-sender messages collapse)
