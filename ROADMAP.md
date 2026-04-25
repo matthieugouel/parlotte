@@ -3,12 +3,9 @@
 ## Core
 - [x] Login / logout with session persistence
 - [x] Apple build pipeline (Rust -> XCFramework -> Swift bindings)
-- [x] Integration tests against real Synapse server
 - [x] Multi-profile support (`--profile` flag for testing)
 - [x] Debug logging (`--debug` flag)
 - [x] Background sync (persistent connection instead of 5s polling)
-- [x] Local notifications (banners for new messages in non-focused rooms, tap-to-open, profile toggle)
-- [ ] Remote push (APNs + Sygnal push gateway, pusher registration, NSE for E2EE decryption) — deferred to the iOS port
 - [ ] Sliding Sync (performance at scale)
 
 ## Rooms
@@ -21,38 +18,56 @@
 - [x] Leave room
 - [x] Room member list
 - [x] Room settings (name, topic)
-- [ ] Admin actions (kick, ban, change power levels)
-- [ ] Delete / tombstone rooms
+- [ ] Member sort and filter (by role, presence, name)
+- [ ] Room aliases / canonical address management
+- [ ] Power levels editor (kick, ban, change roles)
+- [ ] Tombstoned room handling (follow upgrade, retire old room)
+
+## Spaces
+- [ ] Join and browse spaces
+- [ ] Space sidebar with hierarchy
+- [ ] Space lobby / room directory view
+- [ ] Create spaces (public or private)
+- [ ] Add existing rooms to a space
+- [ ] Space settings (name, topic, visibility)
+- [ ] Space permissions / power levels
 
 ## Messaging
 - [x] Send and receive text messages
-- [x] Message history
-- [x] Message pagination (load older messages on scroll)
+- [x] Message history with pagination on scroll
 - [x] Message editing
 - [x] Message deletion
 - [x] Reply to messages
 - [x] Typing indicators
 - [x] Reactions (emoji)
-- [x] Rich text rendering (HTML formatted messages)
+- [x] Rich text rendering (HTML formatted messages, sanitised)
 - [x] Non-text message indicators (image, file, video, audio, location)
 - [x] Media messages (display images, download files)
 - [x] Media upload (send images, files)
+- [ ] Threads
+- [ ] Pinned messages
+- [ ] Message search (server-assisted)
+- [ ] URL previews (opt-in)
+- [ ] Reaction viewer (who reacted with what)
+- [ ] Per-message read-receipts viewer
+- [ ] Custom emoji and sticker packs (MSC2545 image packs)
+- [ ] Slash commands and `@` / `:` autocomplete in composer
+- [ ] In-app PDF viewer and basic image editor (crop, rotate)
+- [ ] Jump to date / jump to message
 
-## UX
+## Calls
+- [ ] Voice and video calls (Element Call / matrix-rtc embed)
+- [ ] Call notifications and join-from-banner
+- [ ] In-call controls (mute, video, screen share)
+
+## Notifications
 - [x] Unread indicators / notification badges
 - [x] Read receipts (mark rooms as read)
-- [x] User profile (display name, avatar)
-- [x] Avatar upload from profile view
-- [x] Light & dark mode
-- [x] Design system (spacing tokens, semantic colors, typography scale)
-- [x] Message grouping (consecutive same-sender messages collapse)
-- [x] Room avatars in sidebar and headers
-- [x] Redesigned room list (two-line rows with avatar, name, subtitle)
-- [x] Redesigned room header (avatar, consolidated overflow menu)
-- [x] Redesigned message composer (rounded surface with border)
-- [x] Sidebar header with user avatar and sync status
-- [x] Empty conversation state
-- [ ] Search (messages, rooms)
+- [x] Local notifications (banners for new messages in non-focused rooms, tap-to-open, profile toggle)
+- [ ] Per-room notification mode (all / mentions / muted)
+- [ ] Keyword and mention rules editor
+- [ ] Server push rules UI (`m.push_rules`)
+- [ ] Remote push (APNs + Sygnal push gateway, pusher registration, NSE for E2EE decryption) — deferred to the iOS port
 
 ## Security
 - [x] Legacy SSO login (browser-based, works with most Synapse servers)
@@ -71,12 +86,28 @@
   - [x] Post-login prompt when `RecoveryState::Incomplete` (new device)
   - [x] `is_last_device` warning before logout
   - [x] Reset recovery from this device (lost-key path)
+- [ ] Device management (list other sessions, rename, sign out remotely)
+- [ ] Ignore / block users (with timeline filtering)
 - [x] Hardening pass (2026-04)
   - [x] Access + refresh tokens moved from UserDefaults to Keychain (legacy plaintext auto-migrated and wiped)
   - [x] HTML sanitiser on message formatted bodies (blocks `<img>`/`<iframe>`/`<script>`/`<style>`, `on*=` handlers, `javascript:`/`data:` hrefs) — stops arbitrary senders triggering network fetches via NSAttributedString
   - [x] SSO callback server binds loopback-only and validates CSRF state parameter with constant-time compare
   - [x] Debug IPC server requires bearer token (random per launch, printed to stderr); refuses requests without it
   - [x] `--profile` input validated (`[A-Za-z0-9_-]{1,64}`) before it's used in filesystem paths
+
+## UX
+- [x] User profile (display name, avatar, avatar upload + remove)
+- [x] Light & dark mode
+- [x] Design system (spacing tokens, semantic colors, typography scale)
+- [x] Message grouping (consecutive same-sender messages collapse)
+- [x] Room avatars in sidebar and headers
+- [x] Redesigned room list (two-line rows with avatar, name, subtitle)
+- [x] Redesigned room header (avatar, consolidated overflow menu)
+- [x] Redesigned message composer (rounded surface with border)
+- [x] Sidebar header with user avatar and sync status
+- [x] Empty conversation state
+- [ ] Presence indicators (online / idle / offline)
+- [ ] Quick switcher (Cmd+K to jump to a room or DM)
 
 ## Testing
 - [x] Unit tests for input validation and error paths (parlotte-core)
@@ -88,8 +119,8 @@
 - [x] DebugServer test suite (state snapshots, command dispatch, error paths)
 - [x] `ax-inspect` accessibility driver (real keystroke typing, button clicks, field input, wait-for)
 - [x] Crash reporting: rely on Xcode Organizer (automatic once distributed via TestFlight / App Store; no in-app code needed)
-- [ ] Persistent sync loop integration test (start sync, receive callback, stop)
 - [x] CI pipeline (GitHub Actions: build, test, clippy, fmt)
+- [ ] Persistent sync loop integration test (start sync, receive callback, stop)
 
 ## Branding
 - [x] App icon (SVG master at `branding/icon/parlotte-icon.svg`; full macOS set generated by `scripts/build-icon.sh`)
