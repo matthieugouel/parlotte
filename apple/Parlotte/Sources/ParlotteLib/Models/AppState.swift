@@ -1004,6 +1004,42 @@ public final class AppState {
         }
     }
 
+    public func setMemberPowerLevel(userId: String, level: Int64) async {
+        guard let client, let roomId = selectedRoomId else { return }
+        do {
+            try await client.setUserPowerLevel(roomId: roomId, userId: userId, level: level)
+        } catch {
+            errorMessage = error.displayMessage
+        }
+    }
+
+    public func kickMember(userId: String, reason: String? = nil) async {
+        guard let client, let roomId = selectedRoomId else { return }
+        do {
+            try await client.kickUser(roomId: roomId, userId: userId, reason: reason)
+        } catch {
+            errorMessage = error.displayMessage
+        }
+    }
+
+    public func banMember(userId: String, reason: String? = nil) async {
+        guard let client, let roomId = selectedRoomId else { return }
+        do {
+            try await client.banUser(roomId: roomId, userId: userId, reason: reason)
+        } catch {
+            errorMessage = error.displayMessage
+        }
+    }
+
+    public func unbanMember(userId: String, reason: String? = nil) async {
+        guard let client, let roomId = selectedRoomId else { return }
+        do {
+            try await client.unbanUser(roomId: roomId, userId: userId, reason: reason)
+        } catch {
+            errorMessage = error.displayMessage
+        }
+    }
+
     // MARK: - Member Profiles
 
     /// Fetch member profiles for the selected room (display names + avatar URLs).

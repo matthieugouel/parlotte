@@ -1160,6 +1160,147 @@ impl ParlotteClient {
         })
     }
 
+    /// Set a member's power level. Typical values: 0 (member), 50 (moderator),
+    /// 100 (admin). Requires the current user to have a higher power level than
+    /// the target's current and target levels.
+    pub fn set_user_power_level(&self, room_id: &str, user_id: &str, level: i64) -> Result<()> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid room ID: {e}"),
+            })?;
+
+            let user_id =
+                matrix_sdk::ruma::UserId::parse(user_id).map_err(|e| ParlotteError::Room {
+                    message: format!("invalid user ID: {e}"),
+                })?;
+
+            let room = client
+                .get_room(room_id)
+                .ok_or_else(|| ParlotteError::Room {
+                    message: format!("room {room_id} not found"),
+                })?;
+
+            let level = matrix_sdk::ruma::Int::try_from(level).map_err(|e| ParlotteError::Room {
+                message: format!("power level out of range: {e}"),
+            })?;
+
+            tracing::debug!(%user_id, %room_id, %level, "setting user power level");
+            room.update_power_levels(vec![(user_id.as_ref(), level)])
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to set power level: {e}"),
+                })?;
+
+            Ok(())
+        })
+    }
+
+    /// Kick a user from a room. Reason is optional and shown to the kicked user.
+    pub fn kick_user(
+        &self,
+        room_id: &str,
+        user_id: &str,
+        reason: Option<String>,
+    ) -> Result<()> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid room ID: {e}"),
+            })?;
+
+            let user_id =
+                matrix_sdk::ruma::UserId::parse(user_id).map_err(|e| ParlotteError::Room {
+                    message: format!("invalid user ID: {e}"),
+                })?;
+
+            let room = client
+                .get_room(room_id)
+                .ok_or_else(|| ParlotteError::Room {
+                    message: format!("room {room_id} not found"),
+                })?;
+
+            tracing::debug!(%user_id, %room_id, "kicking user");
+            room.kick_user(&user_id, reason.as_deref())
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to kick user: {e}"),
+                })?;
+
+            Ok(())
+        })
+    }
+
+    /// Ban a user from a room. Reason is optional.
+    pub fn ban_user(
+        &self,
+        room_id: &str,
+        user_id: &str,
+        reason: Option<String>,
+    ) -> Result<()> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid room ID: {e}"),
+            })?;
+
+            let user_id =
+                matrix_sdk::ruma::UserId::parse(user_id).map_err(|e| ParlotteError::Room {
+                    message: format!("invalid user ID: {e}"),
+                })?;
+
+            let room = client
+                .get_room(room_id)
+                .ok_or_else(|| ParlotteError::Room {
+                    message: format!("room {room_id} not found"),
+                })?;
+
+            tracing::debug!(%user_id, %room_id, "banning user");
+            room.ban_user(&user_id, reason.as_deref())
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to ban user: {e}"),
+                })?;
+
+            Ok(())
+        })
+    }
+
+    /// Unban a previously-banned user.
+    pub fn unban_user(
+        &self,
+        room_id: &str,
+        user_id: &str,
+        reason: Option<String>,
+    ) -> Result<()> {
+        let client = self.client();
+        self.runtime.block_on(async {
+            let room_id = <&RoomId>::try_from(room_id).map_err(|e| ParlotteError::Room {
+                message: format!("invalid room ID: {e}"),
+            })?;
+
+            let user_id =
+                matrix_sdk::ruma::UserId::parse(user_id).map_err(|e| ParlotteError::Room {
+                    message: format!("invalid user ID: {e}"),
+                })?;
+
+            let room = client
+                .get_room(room_id)
+                .ok_or_else(|| ParlotteError::Room {
+                    message: format!("room {room_id} not found"),
+                })?;
+
+            tracing::debug!(%user_id, %room_id, "unbanning user");
+            room.unban_user(&user_id, reason.as_deref())
+                .await
+                .map_err(|e| ParlotteError::Room {
+                    message: format!("failed to unban user: {e}"),
+                })?;
+
+            Ok(())
+        })
+    }
+
     /// Send a read receipt for the given event in a room.
     pub fn send_read_receipt(&self, room_id: &str, event_id: &str) -> Result<()> {
         use matrix_sdk::ruma::events::receipt::ReceiptThread;
@@ -2222,6 +2363,52 @@ mod tests {
         let result = client.room_members("garbage");
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
+    }
+
+    #[test]
+    fn set_user_power_level_rejects_invalid_room_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.set_user_power_level("garbage", "@a:x.com", 50);
+        assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
+    }
+
+    #[test]
+    fn set_user_power_level_rejects_invalid_user_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.set_user_power_level("!room:example.com", "not-a-user", 50);
+        let err = result.unwrap_err();
+        assert!(matches!(err, ParlotteError::Room { .. }));
+        assert!(err.to_string().contains("invalid user ID"));
+    }
+
+    #[test]
+    fn kick_user_rejects_invalid_room_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.kick_user("garbage", "@a:x.com", None);
+        assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
+    }
+
+    #[test]
+    fn kick_user_rejects_invalid_user_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.kick_user("!room:example.com", "nope", Some("spam".into()));
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("invalid user ID"));
+    }
+
+    #[test]
+    fn ban_user_rejects_invalid_room_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.ban_user("garbage", "@a:x.com", None);
+        assert!(matches!(result.unwrap_err(), ParlotteError::Room { .. }));
+    }
+
+    #[test]
+    fn unban_user_rejects_invalid_user_id() {
+        let client = ParlotteClient::new("http://localhost:1234", None).unwrap();
+        let result = client.unban_user("!room:example.com", "nope", None);
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("invalid user ID"));
     }
 
     #[test]

@@ -7,8 +7,16 @@ struct MemberListView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var members: [RoomMemberInfo] = []
     @State private var isLoading = true
+    @State private var pendingKick: RoomMemberInfo?
+    @State private var pendingBan: RoomMemberInfo?
+    @State private var actionInFlight = false
 
     let roomId: String
+
+    private var myPowerLevel: Int64 {
+        guard let me = appState.loggedInUserId else { return 0 }
+        return members.first(where: { $0.userId == me })?.powerLevel ?? 0
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,39 +45,142 @@ struct MemberListView: View {
                 Spacer()
             } else {
                 List(members, id: \.userId) { member in
-                    HStack(spacing: Spacing.md) {
-                        MemberAvatar(userId: member.userId, size: 32)
-
-                        VStack(alignment: .leading, spacing: Spacing.xxs) {
-                            Text(member.displayName ?? localpart(from: member.userId))
-                                .font(.senderName)
-
-                            if member.displayName != nil {
-                                Text(member.userId)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(AppColor.textTertiary)
-                            }
-                        }
-
-                        Spacer()
-
-                        Text(member.role.capitalized)
-                            .font(.system(size: 10, weight: .medium))
-                            .padding(.horizontal, Spacing.sm)
-                            .padding(.vertical, Spacing.xxs)
-                            .background(roleBadgeColor(for: member.role))
-                            .clipShape(Capsule())
-                    }
-                    .padding(.vertical, Spacing.xxs)
+                    memberRow(member)
+                        .padding(.vertical, Spacing.xxs)
+                        .contextMenu { menuItems(for: member) }
                 }
                 .listStyle(.plain)
             }
         }
         .frame(minWidth: 350, minHeight: 300)
         .task {
-            members = await appState.fetchRoomMembers(roomId: roomId)
-            isLoading = false
+            await loadMembers()
         }
+        .confirmationDialog(
+            "Kick \(pendingKick?.displayName ?? pendingKick?.userId ?? "user")?",
+            isPresented: Binding(
+                get: { pendingKick != nil },
+                set: { if !$0 { pendingKick = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingKick
+        ) { member in
+            Button("Kick", role: .destructive) {
+                Task { await performKick(member) }
+            }
+            Button("Cancel", role: .cancel) { pendingKick = nil }
+        } message: { _ in
+            Text("They can rejoin if the room allows it.")
+        }
+        .confirmationDialog(
+            "Ban \(pendingBan?.displayName ?? pendingBan?.userId ?? "user")?",
+            isPresented: Binding(
+                get: { pendingBan != nil },
+                set: { if !$0 { pendingBan = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingBan
+        ) { member in
+            Button("Ban", role: .destructive) {
+                Task { await performBan(member) }
+            }
+            Button("Cancel", role: .cancel) { pendingBan = nil }
+        } message: { _ in
+            Text("They cannot rejoin until unbanned.")
+        }
+    }
+
+    @ViewBuilder
+    private func memberRow(_ member: RoomMemberInfo) -> some View {
+        HStack(spacing: Spacing.md) {
+            MemberAvatar(userId: member.userId, size: 32)
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(member.displayName ?? localpart(from: member.userId))
+                    .font(.senderName)
+
+                if member.displayName != nil {
+                    Text(member.userId)
+                        .font(.system(size: 11))
+                        .foregroundStyle(AppColor.textTertiary)
+                }
+            }
+
+            Spacer()
+
+            Text(member.role.capitalized)
+                .font(.system(size: 10, weight: .medium))
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xxs)
+                .background(roleBadgeColor(for: member.role))
+                .clipShape(Capsule())
+        }
+    }
+
+    @ViewBuilder
+    private func menuItems(for member: RoomMemberInfo) -> some View {
+        let isSelf = member.userId == appState.loggedInUserId
+        let canModerate = !isSelf && myPowerLevel >= 50 && myPowerLevel > member.powerLevel
+
+        if canModerate {
+            if myPowerLevel >= 100 && member.powerLevel != 100 {
+                Button("Make Admin") {
+                    Task { await performSetLevel(member, level: 100) }
+                }
+            }
+            if myPowerLevel >= 100 && member.powerLevel != 50 {
+                Button("Make Moderator") {
+                    Task { await performSetLevel(member, level: 50) }
+                }
+            }
+            if member.powerLevel > 0 {
+                Button("Reset to Member") {
+                    Task { await performSetLevel(member, level: 0) }
+                }
+            }
+            Divider()
+            Button("Kick…", role: .destructive) {
+                pendingKick = member
+            }
+            Button("Ban…", role: .destructive) {
+                pendingBan = member
+            }
+        } else if isSelf {
+            Text("That's you")
+        } else {
+            Text("No actions available")
+        }
+    }
+
+    private func loadMembers() async {
+        members = await appState.fetchRoomMembers(roomId: roomId)
+        isLoading = false
+    }
+
+    private func performSetLevel(_ member: RoomMemberInfo, level: Int64) async {
+        guard !actionInFlight else { return }
+        actionInFlight = true
+        await appState.setMemberPowerLevel(userId: member.userId, level: level)
+        await loadMembers()
+        actionInFlight = false
+    }
+
+    private func performKick(_ member: RoomMemberInfo) async {
+        guard !actionInFlight else { return }
+        actionInFlight = true
+        await appState.kickMember(userId: member.userId, reason: nil)
+        pendingKick = nil
+        await loadMembers()
+        actionInFlight = false
+    }
+
+    private func performBan(_ member: RoomMemberInfo) async {
+        guard !actionInFlight else { return }
+        actionInFlight = true
+        await appState.banMember(userId: member.userId, reason: nil)
+        pendingBan = nil
+        await loadMembers()
+        actionInFlight = false
     }
 
     private func localpart(from userId: String) -> String {

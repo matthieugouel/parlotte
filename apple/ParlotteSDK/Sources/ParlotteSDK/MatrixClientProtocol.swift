@@ -41,6 +41,10 @@ public protocol MatrixClientProtocol: Sendable {
     func removeAvatar() async throws
     func setRoomName(roomId: String, name: String) async throws
     func setRoomTopic(roomId: String, topic: String) async throws
+    func setUserPowerLevel(roomId: String, userId: String, level: Int64) async throws
+    func kickUser(roomId: String, userId: String, reason: String?) async throws
+    func banUser(roomId: String, userId: String, reason: String?) async throws
+    func unbanUser(roomId: String, userId: String, reason: String?) async throws
     func startSync(listener: ParlotteSyncListener) throws
     func stopSync()
     var isSyncing: Bool { get }

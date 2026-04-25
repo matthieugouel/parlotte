@@ -274,6 +274,34 @@ public actor MatrixClient {
         }.value
     }
 
+    public func setUserPowerLevel(roomId: String, userId: String, level: Int64) async throws {
+        let ffi = self.ffi
+        try await Task.detached {
+            try ffi.setUserPowerLevel(roomId: roomId, userId: userId, level: level)
+        }.value
+    }
+
+    public func kickUser(roomId: String, userId: String, reason: String?) async throws {
+        let ffi = self.ffi
+        try await Task.detached {
+            try ffi.kickUser(roomId: roomId, userId: userId, reason: reason)
+        }.value
+    }
+
+    public func banUser(roomId: String, userId: String, reason: String?) async throws {
+        let ffi = self.ffi
+        try await Task.detached {
+            try ffi.banUser(roomId: roomId, userId: userId, reason: reason)
+        }.value
+    }
+
+    public func unbanUser(roomId: String, userId: String, reason: String?) async throws {
+        let ffi = self.ffi
+        try await Task.detached {
+            try ffi.unbanUser(roomId: roomId, userId: userId, reason: reason)
+        }.value
+    }
+
     public nonisolated func startSync(listener: ParlotteSyncListener) throws {
         try ffi.startSync(listener: listener)
     }

@@ -21,7 +21,7 @@
 - [x] Room settings (name, topic)
 - [ ] Member sort and filter (by role, presence, name)
 - [ ] Room aliases / canonical address management
-- [ ] Power levels editor (kick, ban, change roles)
+- [x] Power levels editor (kick, ban, change roles)
 - [ ] Tombstoned room handling (follow upgrade, retire old room)
 
 ## Spaces

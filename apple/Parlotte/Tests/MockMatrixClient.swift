@@ -33,6 +33,10 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var roomMembersCalls: [String] = []
     var setRoomNameCalls: [(roomId: String, name: String)] = []
     var setRoomTopicCalls: [(roomId: String, topic: String)] = []
+    var setUserPowerLevelCalls: [(roomId: String, userId: String, level: Int64)] = []
+    var kickUserCalls: [(roomId: String, userId: String, reason: String?)] = []
+    var banUserCalls: [(roomId: String, userId: String, reason: String?)] = []
+    var unbanUserCalls: [(roomId: String, userId: String, reason: String?)] = []
 
     // MARK: - Configurable behavior
 
@@ -73,6 +77,10 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     var roomMembersResult: [RoomMemberInfo] = []
     var setRoomNameError: Error?
     var setRoomTopicError: Error?
+    var setUserPowerLevelError: Error?
+    var kickUserError: Error?
+    var banUserError: Error?
+    var unbanUserError: Error?
 
     // Recovery
     var recoveryStateResult: RecoveryState = .disabled
@@ -207,6 +215,26 @@ final class MockMatrixClient: MatrixClientProtocol, @unchecked Sendable {
     func setRoomTopic(roomId: String, topic: String) async throws {
         try errorFor(setRoomTopicError)
         setRoomTopicCalls.append((roomId, topic))
+    }
+
+    func setUserPowerLevel(roomId: String, userId: String, level: Int64) async throws {
+        try errorFor(setUserPowerLevelError)
+        setUserPowerLevelCalls.append((roomId, userId, level))
+    }
+
+    func kickUser(roomId: String, userId: String, reason: String?) async throws {
+        try errorFor(kickUserError)
+        kickUserCalls.append((roomId, userId, reason))
+    }
+
+    func banUser(roomId: String, userId: String, reason: String?) async throws {
+        try errorFor(banUserError)
+        banUserCalls.append((roomId, userId, reason))
+    }
+
+    func unbanUser(roomId: String, userId: String, reason: String?) async throws {
+        try errorFor(unbanUserError)
+        unbanUserCalls.append((roomId, userId, reason))
     }
 
     // MARK: - Stubs (not needed for state management tests)

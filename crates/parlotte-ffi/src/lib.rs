@@ -592,6 +592,42 @@ impl ParlotteClientFFI {
         Ok(self.inner.leave_room(&room_id)?)
     }
 
+    pub fn set_user_power_level(
+        &self,
+        room_id: String,
+        user_id: String,
+        level: i64,
+    ) -> Result<(), ParlotteError> {
+        Ok(self.inner.set_user_power_level(&room_id, &user_id, level)?)
+    }
+
+    pub fn kick_user(
+        &self,
+        room_id: String,
+        user_id: String,
+        reason: Option<String>,
+    ) -> Result<(), ParlotteError> {
+        Ok(self.inner.kick_user(&room_id, &user_id, reason)?)
+    }
+
+    pub fn ban_user(
+        &self,
+        room_id: String,
+        user_id: String,
+        reason: Option<String>,
+    ) -> Result<(), ParlotteError> {
+        Ok(self.inner.ban_user(&room_id, &user_id, reason)?)
+    }
+
+    pub fn unban_user(
+        &self,
+        room_id: String,
+        user_id: String,
+        reason: Option<String>,
+    ) -> Result<(), ParlotteError> {
+        Ok(self.inner.unban_user(&room_id, &user_id, reason)?)
+    }
+
     pub fn room_members(&self, room_id: String) -> Result<Vec<RoomMemberInfo>, ParlotteError> {
         Ok(self
             .inner

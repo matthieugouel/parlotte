@@ -1350,6 +1350,80 @@ struct AppStateTests {
         #expect(appState.rooms[0].topic == "After topic")
     }
 
+    // MARK: - Power Levels & Moderation
+
+    @Test("setMemberPowerLevel forwards to the client with the selected room")
+    mutating func setMemberPowerLevelForwards() async {
+        await appState.setMemberPowerLevel(userId: "@bob:example.com", level: 50)
+
+        #expect(mock.setUserPowerLevelCalls.count == 1)
+        #expect(mock.setUserPowerLevelCalls[0].roomId == "!room:example.com")
+        #expect(mock.setUserPowerLevelCalls[0].userId == "@bob:example.com")
+        #expect(mock.setUserPowerLevelCalls[0].level == 50)
+        #expect(appState.errorMessage == nil)
+    }
+
+    @Test("setMemberPowerLevel surfaces errors")
+    mutating func setMemberPowerLevelSurfacesErrors() async {
+        mock.setUserPowerLevelError = ParlotteError.Room(message: "denied")
+
+        await appState.setMemberPowerLevel(userId: "@bob:example.com", level: 100)
+
+        #expect(appState.errorMessage != nil)
+    }
+
+    @Test("kickMember calls client with reason")
+    mutating func kickMemberCallsClient() async {
+        await appState.kickMember(userId: "@bob:example.com", reason: "spam")
+
+        #expect(mock.kickUserCalls.count == 1)
+        #expect(mock.kickUserCalls[0].roomId == "!room:example.com")
+        #expect(mock.kickUserCalls[0].userId == "@bob:example.com")
+        #expect(mock.kickUserCalls[0].reason == "spam")
+    }
+
+    @Test("banMember forwards to the client")
+    mutating func banMemberForwards() async {
+        await appState.banMember(userId: "@bob:example.com")
+
+        #expect(mock.banUserCalls.count == 1)
+        #expect(mock.banUserCalls[0].userId == "@bob:example.com")
+        #expect(mock.banUserCalls[0].reason == nil)
+        #expect(appState.errorMessage == nil)
+    }
+
+    @Test("banMember surfaces errors")
+    mutating func banMemberSurfacesErrors() async {
+        mock.banUserError = ParlotteError.Room(message: "denied")
+
+        await appState.banMember(userId: "@bob:example.com")
+
+        #expect(appState.errorMessage != nil)
+    }
+
+    @Test("unbanMember calls client")
+    mutating func unbanMemberCallsClient() async {
+        await appState.unbanMember(userId: "@bob:example.com")
+
+        #expect(mock.unbanUserCalls.count == 1)
+        #expect(mock.unbanUserCalls[0].userId == "@bob:example.com")
+    }
+
+    @Test("Moderation actions are no-ops with no selected room")
+    mutating func moderationNoOpsWithoutSelectedRoom() async {
+        appState.selectedRoomId = nil
+
+        await appState.setMemberPowerLevel(userId: "@bob:example.com", level: 50)
+        await appState.kickMember(userId: "@bob:example.com")
+        await appState.banMember(userId: "@bob:example.com")
+        await appState.unbanMember(userId: "@bob:example.com")
+
+        #expect(mock.setUserPowerLevelCalls.isEmpty)
+        #expect(mock.kickUserCalls.isEmpty)
+        #expect(mock.banUserCalls.isEmpty)
+        #expect(mock.unbanUserCalls.isEmpty)
+    }
+
     // MARK: - Recovery
 
     @Test("refreshRecoveryState pulls current state from the client")
